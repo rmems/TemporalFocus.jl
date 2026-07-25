@@ -35,6 +35,7 @@ uuid = "7f3c9f2a-6b2e-4d91-9c4f-1a2b3c4d5e6f"
 2. Update **every** place that embeds the package UUID, at least:
    - `Project.toml`
    - any nested `Project.toml` that pins the same package identity (e.g. `docs/Project.toml`, `benchmark/Project.toml` if present)
+   - the committed root `Manifest.toml` — re-resolve after changing `Project.toml` (e.g. `julia --project=. -e 'using Pkg; Pkg.resolve()'` or `Pkg.instantiate()`) so `[[deps.TemporalFocus]]` / `project_hash` match the new UUID; otherwise `Pkg.instantiate()` / CI fail on the freeze commit
 3. Commit and merge that change on the default branch **before** registration.
 4. After registration, never change the UUID again.
 
