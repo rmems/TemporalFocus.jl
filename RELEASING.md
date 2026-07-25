@@ -10,30 +10,37 @@ This document covers first registration in the [General](https://github.com/Juli
 - [ ] `Project.toml` `version` matches the intended release (currently `0.1.0`)
 - [ ] `CHANGELOG.md` has a dated section for that version (see also #24 / related changelog PRs)
 - [ ] Top-level `LICENSE` exists (dual MIT OR Apache-2.0); `LICENSE-MIT` and `LICENSE-APACHE` remain the canonical full texts
-- [ ] TagBot workflow is present (`.github/workflows/TagBot.yml`) with `permissions: contents: write` (and at least read on issues/PRs) so TagBot can create tags/releases even if the org default `GITHUB_TOKEN` is read-only
-- [ ] Repo/org **Actions → General → Workflow permissions** allow creating and approving pull requests / read and write (or use TagBot’s documented PAT fallback) so first registration does not stall after General AutoMerge
+- [ ] TagBot workflow is present (`.github/workflows/TagBot.yml`) with explicit `permissions:` including `contents: write` (and at least `issues: read` / `pull-requests: read`) so TagBot can create tags/releases even if the org default `GITHUB_TOKEN` is read-only
+- [ ] **[JuliaRegistrator](https://github.com/apps/julia-registrator)** GitHub App is installed/authorized on this repository (and the org if required). Until it is, `@JuliaRegistrator register` comments do nothing and no General PR is opened
 - [ ] Optional but recommended for versioned docs: repository secret `DOCUMENTER_KEY` (SSH deploy key) so TagBot tag pushes can trigger the Documentation workflow
+- [ ] Optional: TagBot PAT / manual-tag fallback prepared for the case where the registration commit adds or changes `.github/workflows/*` (GitHub blocks `GITHUB_TOKEN` tag creation for such commits)
 
-### UUID hygiene (first registration only)
+### UUID hygiene (first registration only) — **blocker**
 
-`Project.toml` currently has:
+`Project.toml` currently has a **template-looking** UUID:
 
 ```toml
 uuid = "7f3c9f2a-6b2e-4d91-9c4f-1a2b3c4d5e6f"
 ```
 
-**Review this UUID before the first `@JuliaRegistrator register` comment.** Once a package is registered in General, the UUID is effectively immutable. Do not regenerate it after registration. Only change it *before* first registration if you confirm it was hand-crafted or collides with an existing package.
+**Before the first `@JuliaRegistrator register` comment, regenerate a real UUID and land it on `main`.** The value above is an obviously patterned placeholder (`…1a2b3c4d5e6f`). Once a package is registered in General, the UUID is permanent — do not register with this template identity.
 
-Generate a fresh UUID if needed:
+1. Generate a fresh UUID:
 
-```julia
-using UUIDs
-uuid4()
-```
+   ```julia
+   using UUIDs
+   uuid4()
+   ```
+
+2. Update **every** place that embeds the package UUID, at least:
+   - `Project.toml`
+   - any nested `Project.toml` that pins the same package identity (e.g. `docs/Project.toml`, `benchmark/Project.toml` if present)
+3. Commit and merge that change on the default branch **before** registration.
+4. After registration, never change the UUID again.
 
 ## First registration (v0.1.0)
 
-1. **Freeze `main`** — merge all release-prep and changelog work; ensure `Project.toml` version is `0.1.0` and CI is green.
+1. **Freeze `main`** — merge all release-prep and changelog work; ensure `Project.toml` version is `0.1.0`, the UUID is a regenerated `uuid4()` (not the template above), and CI is green.
 2. **Do not pre-create a git tag** (e.g. `v0.1.0`). With TagBot enabled, pre-tagging races or confuses automated tagging after registration.
 3. On a **commit on the default branch** you want to register, open an **issue comment** or a **commit comment** and write:
 
@@ -71,10 +78,12 @@ uuid4()
 - No `git tag` / GitHub Release creation in prep PRs
 - No `@JuliaRegistrator register` until after prep is merged and review is complete
 - No UUID changes after the package is in General
+- No registration with the template UUID in `Project.toml` (regenerate first)
 
 ## References
 
 - [Registrator.jl](https://github.com/JuliaRegistries/Registrator.jl)
+- [JuliaRegistrator GitHub App](https://github.com/apps/julia-registrator)
 - [General registry](https://github.com/JuliaRegistries/General)
 - [TagBot](https://github.com/JuliaRegistries/TagBot)
 - [Package naming / registration guidelines](https://github.com/JuliaRegistries/General#registering-a-package-in-general)
