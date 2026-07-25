@@ -1,0 +1,24 @@
+name: TagBot
+on:
+  issue_comment:
+    types:
+      - created
+  workflow_dispatch:
+# Explicit token scopes so TagBot can create tags/releases even when the
+# org/repo default GITHUB_TOKEN is read-only.
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+jobs:
+  TagBot:
+    if: github.event_name == 'workflow_dispatch' || github.actor == 'JuliaTagBot'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: JuliaRegistries/TagBot@14d7645453716d7a2f09b1da0504a024f97462a1 # v1.25.10
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Deploy key so tag pushes can trigger the Documentation workflow
+          # (GITHUB_TOKEN alone does not re-trigger workflows). Optional until
+          # Documenter is configured; empty is treated as no SSH key.
+          ssh: ${{ secrets.DOCUMENTER_KEY }}

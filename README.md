@@ -1,6 +1,6 @@
 # TemporalFocus.jl
 
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://limen-neural.github.io/TemporalFocus.jl/dev/)
 
 Pure spike-native temporal interaction primitives for the Spikenaut ecosystem.

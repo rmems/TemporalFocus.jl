@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-05
+> Last updated: 2026-07-22
 
 ## Project overview
 
@@ -51,7 +51,7 @@ julia --project=docs docs/make.jl
   - `temporal_weight` — exponential decay weighting
   - `prune!` — in-place buffer pruning
 - SPDX (Software Package Data Exchange) license header at the top of every source file: `# SPDX-License-Identifier: MIT OR Apache-2.0`
-- MIT (Massachusetts Institute of Technology) license — see `LICENSE-MIT`
+- Dual license MIT OR Apache-2.0 — see top-level `LICENSE`, plus `LICENSE-MIT` and `LICENSE-APACHE`
 
 ## Testing
 
@@ -76,3 +76,7 @@ julia --project=docs docs/make.jl
 ## Cursor Cloud specific instructions
 
 - Julia is provided via `juliaup` and the default channel is **1.12**, matching this repo's committed `Manifest.toml`. Run the standard dev commands from "Dev environment" above: `julia --project=. -e 'using Pkg; Pkg.instantiate()'`, then `julia --project=. -e 'using Pkg; Pkg.test()'` (50 tests).
+
+## Release
+
+For General registry registration, TagBot, UUID immutability, and the “do not pre-tag” rule, see [RELEASING.md](RELEASING.md). Release-prep PRs must not create git tags or run Registrator.

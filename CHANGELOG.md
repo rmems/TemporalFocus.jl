@@ -35,6 +35,8 @@ primitives for the Spikenaut ecosystem.
 - Normalization: `normalize_l1!`, `normalize_max!`
 - Dual licensing: MIT OR Apache-2.0
 - Agent and review guidance: `AGENTS.md`, `REVIEW.md`
+- Top-level dual `LICENSE` (SPDX MIT OR Apache-2.0), TagBot workflow, and
+  `RELEASING.md` for General registry prep
 
 ### Changed
 
