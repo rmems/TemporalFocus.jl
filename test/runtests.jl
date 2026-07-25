@@ -409,12 +409,13 @@ using Random
             @test tnan1 != tnan2
             @test isequal(tnan1, tnan2)
             @test length(Set([tnan1, tnan2])) == 1
-            # Mutable-key contract: mutating events after Set insert breaks lookup
+            # Mutable-key contract: content hash changes if events mutate while
+            # the object is used as a Dict/Set key (do not rely on one specific
+            # corrupted-lookup outcome — that is hash-table implementation-defined).
             key = SpikeTrain([e1])
-            s = Set([key])
-            @test key in s
+            h_before = hash(key)
             push!(key.events, e2)
-            @test !(key in s)
+            @test hash(key) != h_before
         end
         @testset "TemporalBuffer" begin
             e = SpikeEvent(1, 0.1f0, 1.0f0)
@@ -433,12 +434,11 @@ using Random
             @test bnan1 != bnan2
             @test isequal(bnan1, bnan2)
             @test length(Set([bnan1, bnan2])) == 1
-            # Mutable-key contract: prune! after Set insert breaks lookup
+            # Mutable-key contract: prune! changes content hash (same caveat as SpikeTrain)
             buf = TemporalBuffer(0.5f0, [SpikeEvent(1, 0.0f0, 1.0f0), SpikeEvent(1, 1.0f0, 1.0f0)])
-            s = Set([buf])
-            @test buf in s
+            h_before = hash(buf)
             prune!(buf, 1.0f0)
-            @test !(buf in s)
+            @test hash(buf) != h_before
         end
     end
 
