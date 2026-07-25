@@ -30,9 +30,13 @@ SpikeEvent(neuron_id::Integer, t::Real, value::Real = 1.0f0) =
 A collection of [`SpikeEvent`](@ref)s stored in vector order.
 
 Attention kernels treat trains as bags of events (order does not affect
-scores), but `==` / `hash` compare the underlying `events` vector
+scores), but `==` / `isequal` / `hash` compare the underlying `events` vector
 element-wise, so order is part of equality. Callers that need order-invariant
 identity should normalize event order (or use a multiset) themselves.
+
+**Hash keys:** `events` is a mutable vector. Do not mutate a `SpikeTrain`
+(including pushing/replacing events) while it is stored as a key in a `Dict`
+or element of a `Set` — that changes its hash and breaks lookup/deletion.
 
 # Arguments
 - `events`: vector of `SpikeEvent` (copied into a `Vector{SpikeEvent}`)
@@ -54,6 +58,11 @@ A sliding temporal window of spike events.
 
 Events older than `window` relative to a reference time can be removed with
 [`prune!`](@ref).
+
+**Hash keys:** `events` is mutated by [`prune!`](@ref) and may be edited
+directly. Do not mutate a `TemporalBuffer` while it is stored as a key in a
+`Dict` or element of a `Set` — that changes its hash and breaks
+lookup/deletion.
 
 # Arguments
 - `window::Real`: retention window length (stored as `Float32`)
@@ -111,6 +120,8 @@ end
 
 # `==` uses Float32 `==` (±0.0 equal, NaNs not equal).
 # `isequal`/`hash` follow Julia float rules (±0.0 distinct, NaNs equal) for Set/Dict.
+# Mutable containers (`SpikeTrain` / `TemporalBuffer`) must not be mutated while
+# stored as Dict keys or Set elements (hash is content-based over `events`).
 Base.:(==)(a::SpikeEvent, b::SpikeEvent) =
     a.neuron_id == b.neuron_id && a.t == b.t && a.value == b.value
 

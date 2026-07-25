@@ -386,7 +386,6 @@ using Random
             zneg = SpikeEvent(1, -0.0f0, -0.0f0)
             @test zpos == zneg
             @test !isequal(zpos, zneg)
-            @test hash(zpos) != hash(zneg)
             @test length(Set([zpos, zneg])) == 2
             # NaN: `==` is false; `isequal`/`Set` treat matching NaN spikes as one key
             nan1 = SpikeEvent(1, NaN32, 1.0f0)
@@ -410,6 +409,12 @@ using Random
             @test tnan1 != tnan2
             @test isequal(tnan1, tnan2)
             @test length(Set([tnan1, tnan2])) == 1
+            # Mutable-key contract: mutating events after Set insert breaks lookup
+            key = SpikeTrain([e1])
+            s = Set([key])
+            @test key in s
+            push!(key.events, e2)
+            @test !(key in s)
         end
         @testset "TemporalBuffer" begin
             e = SpikeEvent(1, 0.1f0, 1.0f0)
@@ -422,8 +427,18 @@ using Random
             bneg = TemporalBuffer(-0.0f0)
             @test bpos == bneg
             @test !isequal(bpos, bneg)
-            @test hash(bpos) != hash(bneg)
             @test length(Set([bpos, bneg])) == 2
+            bnan1 = TemporalBuffer(NaN32)
+            bnan2 = TemporalBuffer(NaN32)
+            @test bnan1 != bnan2
+            @test isequal(bnan1, bnan2)
+            @test length(Set([bnan1, bnan2])) == 1
+            # Mutable-key contract: prune! after Set insert breaks lookup
+            buf = TemporalBuffer(0.5f0, [SpikeEvent(1, 0.0f0, 1.0f0), SpikeEvent(1, 1.0f0, 1.0f0)])
+            s = Set([buf])
+            @test buf in s
+            prune!(buf, 1.0f0)
+            @test !(buf in s)
         end
     end
 
