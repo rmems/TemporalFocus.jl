@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `Base.isempty` for `SpikeTrain` and `TemporalBuffer`.
+- `Base.==`, `Base.isequal`, and `Base.hash` for `SpikeEvent`, `SpikeTrain`, and
+  `TemporalBuffer` (content equality; float `isequal`/`hash` rules for Set/Dict).
 - Julia docstrings for all public exports (module, types, attention kernels, normalization).
 - Runnable usage examples under `examples/`.
 - Random-based property tests for normalize, temporal_weight, and prune!.

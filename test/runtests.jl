@@ -373,6 +373,75 @@ using Random
         @test occursin("1 event)", sprint(show, TemporalBuffer(0.25f0, [SpikeEvent(1, 0.1f0)])))
     end
 
+
+    @testset "Base.==" begin
+        @testset "SpikeEvent" begin
+            a = SpikeEvent(1, 0.5f0, 1.0f0)
+            @test a == SpikeEvent(1, 0.5f0, 1.0f0)
+            @test a != SpikeEvent(2, 0.5f0, 1.0f0)
+            @test a != SpikeEvent(1, 0.6f0, 1.0f0)
+            @test a != SpikeEvent(1, 0.5f0, 2.0f0)
+            # ±0.0f0: Float32 `==` collapses signs; `isequal`/`Set` keep Julia float rules
+            zpos = SpikeEvent(1, 0.0f0, 0.0f0)
+            zneg = SpikeEvent(1, -0.0f0, -0.0f0)
+            @test zpos == zneg
+            @test !isequal(zpos, zneg)
+            @test length(Set([zpos, zneg])) == 2
+            # NaN: `==` is false; `isequal`/`Set` treat matching NaN spikes as one key
+            nan1 = SpikeEvent(1, NaN32, 1.0f0)
+            nan2 = SpikeEvent(1, NaN32, 1.0f0)
+            @test nan1 != nan2
+            @test isequal(nan1, nan2)
+            @test hash(nan1) == hash(nan2)
+            @test length(Set([nan1, nan2])) == 1
+        end
+        @testset "SpikeTrain" begin
+            e1 = SpikeEvent(1, 0.1f0, 1.0f0)
+            e2 = SpikeEvent(2, 0.2f0, 1.0f0)
+            @test SpikeTrain() == SpikeTrain(SpikeEvent[])
+            @test SpikeTrain([e1, e2]) == SpikeTrain([e1, e2])
+            @test SpikeTrain([e1, e2]) != SpikeTrain([e2, e1])
+            @test SpikeTrain([e1]) != SpikeTrain()
+            @test hash(SpikeTrain([e1, e2])) == hash(SpikeTrain([e1, e2]))
+            @test length(Set([SpikeTrain([e1]), SpikeTrain([e1])])) == 1
+            tnan1 = SpikeTrain([SpikeEvent(1, NaN32, 1.0f0)])
+            tnan2 = SpikeTrain([SpikeEvent(1, NaN32, 1.0f0)])
+            @test tnan1 != tnan2
+            @test isequal(tnan1, tnan2)
+            @test length(Set([tnan1, tnan2])) == 1
+            # Mutable-key contract: content hash changes if events mutate while
+            # the object is used as a Dict/Set key (do not rely on one specific
+            # corrupted-lookup outcome — that is hash-table implementation-defined).
+            key = SpikeTrain([e1])
+            h_before = hash(key)
+            push!(key.events, e2)
+            @test hash(key) != h_before
+        end
+        @testset "TemporalBuffer" begin
+            e = SpikeEvent(1, 0.1f0, 1.0f0)
+            @test TemporalBuffer(1.0f0) == TemporalBuffer(1.0f0, SpikeEvent[])
+            @test TemporalBuffer(1.0f0, [e]) == TemporalBuffer(1.0f0, [e])
+            @test TemporalBuffer(1.0f0, [e]) != TemporalBuffer(2.0f0, [e])
+            @test TemporalBuffer(1.0f0, [e]) != TemporalBuffer(1.0f0)
+            @test hash(TemporalBuffer(1.0f0, [e])) == hash(TemporalBuffer(1.0f0, [e]))
+            bpos = TemporalBuffer(0.0f0)
+            bneg = TemporalBuffer(-0.0f0)
+            @test bpos == bneg
+            @test !isequal(bpos, bneg)
+            @test length(Set([bpos, bneg])) == 2
+            bnan1 = TemporalBuffer(NaN32)
+            bnan2 = TemporalBuffer(NaN32)
+            @test bnan1 != bnan2
+            @test isequal(bnan1, bnan2)
+            @test length(Set([bnan1, bnan2])) == 1
+            # Mutable-key contract: prune! changes content hash (same caveat as SpikeTrain)
+            buf = TemporalBuffer(0.5f0, [SpikeEvent(1, 0.0f0, 1.0f0), SpikeEvent(1, 1.0f0, 1.0f0)])
+            h_before = hash(buf)
+            prune!(buf, 1.0f0)
+            @test hash(buf) != h_before
+        end
+    end
+
     @testset "Property invariants" begin
         rng = MersenneTwister(246)
         N = 100
@@ -498,6 +567,16 @@ using Random
                 prune!(buffer, current_time)
                 @test buffer.events == after_first
             end
+        end
+        @testset "hash matches ==" begin
+            e1 = SpikeEvent(1, 0.1f0, 1.0f0)
+            e2 = SpikeEvent(2, 0.2f0, 1.0f0)
+            a = SpikeTrain([e1, e2])
+            b = SpikeTrain([e1, e2])
+            @test hash(a) == hash(b)
+            @test length(Set([a, b])) == 1
+            @test hash(SpikeEvent(1, 0.5f0, 1.0f0)) == hash(SpikeEvent(1, 0.5f0, 1.0f0))
+            @test hash(TemporalBuffer(1.0f0, [e1])) == hash(TemporalBuffer(1.0f0, [e1]))
         end
     end
 
