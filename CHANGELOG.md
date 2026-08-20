@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Post-transfer hygiene: docs, package metadata, and changelog links now point at
+  `rmems/TemporalFocus.jl` (formerly Limen-Neural).
 - Expanded CI test matrix to macOS and Windows (Julia 1.11) alongside Ubuntu (Julia 1.9–1.12).
 
 ## [0.1.0] - 2026-07-05
@@ -54,5 +56,5 @@ primitives for the Spikenaut ecosystem.
 - Tokenization, embeddings, transformer attention, and related non-spike
   attention surface area from package scope
 
-[Unreleased]: https://github.com/Limen-Neural/TemporalFocus.jl/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Limen-Neural/TemporalFocus.jl/releases/tag/v0.1.0
+[Unreleased]: https://github.com/rmems/TemporalFocus.jl/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/rmems/TemporalFocus.jl/releases/tag/v0.1.0

@@ -16,14 +16,14 @@ It does **not** own STDP or other plasticity rules, tokenization/embeddings,
 transformer attention, cross-modal projector weights, runtime scheduling, or
 LLM-side fusion logic. Those belong in dedicated packages.
 
-See the repository [README](https://github.com/Limen-Neural/TemporalFocus.jl)
+See the repository [README](https://github.com/rmems/TemporalFocus.jl)
 for the full interface contract and non-goals.
 
 ## Installation
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/Limen-Neural/TemporalFocus.jl")
+Pkg.add(url="https://github.com/rmems/TemporalFocus.jl")
 ```
 
 Requires Julia 1.9+.
