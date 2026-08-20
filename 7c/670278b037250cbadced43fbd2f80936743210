@@ -1,0 +1,37 @@
+Project.toml
+  s_3b89f78a11cceb::t_a74bb289ce4474 3
+LICENSE-MIT
+  s_3b89f78a11cceb::t_1863ccd10cebaf 3
+LICENSE
+  s_3b89f78a11cceb::t_a12a333d85b235 1,27
+  s_3b89f78a11cceb::t_b8660e9644ef1b 228
+README.md
+  s_3b89f78a11cceb::t_8b7d674174c3a7 4
+  s_3b89f78a11cceb::t_4a6143735700e0 8-14
+docs/src/index.md
+  s_3b89f78a11cceb::t_3ded034a24abd6 19
+  s_3b89f78a11cceb::t_833d5e2d67c192 26
+docs/make.jl
+  s_3b89f78a11cceb::t_288a842f3a4570 12
+LICENSE-APACHE
+  s_3b89f78a11cceb::t_96beb012de86b5 178
+CHANGELOG.md
+  s_3b89f78a11cceb::t_a802c15227a34d 59-60
+  s_3b89f78a11cceb::t_a710879e0e8176 21-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7c670278b037250cbadced43fbd2f80936743210",
+  "prompts": {},
+  "sessions": {
+    "s_3b89f78a11cceb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "37bb874e-e940-4a6e-98e2-5447e7a35d6f",
+        "model": "composer-2.5"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
