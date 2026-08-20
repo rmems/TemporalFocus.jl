@@ -1,9 +1,16 @@
 # TemporalFocus.jl
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://limen-neural.github.io/TemporalFocus.jl/dev/)
+[![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://rmems.github.io/TemporalFocus.jl/dev/)
 
 Pure spike-native temporal interaction primitives for the Spikenaut ecosystem.
+
+**Repository:** [github.com/rmems/TemporalFocus.jl](https://github.com/rmems/TemporalFocus.jl)
+
+**Wiki:** GitHub wiki is enabled for this repo but not yet populated (no pages as of the
+Limen-Neural → rmems transfer). When content exists, clone
+`git@github.com:rmems/TemporalFocus.jl.wiki.git` to
+`~/rmems/limen-return/wiki/TemporalFocus.jl.wiki`.
 
 ## Scope
 

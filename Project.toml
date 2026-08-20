@@ -1,6 +1,6 @@
 name = "TemporalFocus"
 uuid = "7f3c9f2a-6b2e-4d91-9c4f-1a2b3c4d5e6f"
-authors = ["Limen-Neural"]
+authors = ["rmems"]
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
 

@@ -9,5 +9,5 @@ makedocs(
 # Skip deploy on PR builds (no credentials; avoid running deploydocs from untrusted PR code).
 if get(ENV, "DOCUMENTER_BUILD_ONLY", "") != "true" &&
    get(ENV, "GITHUB_EVENT_NAME", "") != "pull_request"
-    deploydocs(repo = "github.com/Limen-Neural/TemporalFocus.jl.git", push_preview = true)
+    deploydocs(repo = "github.com/rmems/TemporalFocus.jl.git", push_preview = true)
 end
