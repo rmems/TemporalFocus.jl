@@ -53,8 +53,8 @@ steps do not re-litigate them.
    ```
 
    That URL still points at the **former `Limen-Neural` org**. Because it is a frozen
-   `rev` pin, Limen-Capital does not break when the source repo is archived — but the
-   pin will need one edit (UUID + URL) as part of `rmems/Limen-Capital#9`.
+   `rev` pin, Limen-Capital does not break when the source repo is archived — but it will
+   need UUID, URL, **and `rev`** updated as part of `rmems/Limen-Capital#9`.
 4. **That consumer's dependency is declared but optional, and its routing code is a
    vendored fork.** `brain/adapters.jl` loads the package opportunistically
    (`@eval using TemporalFocus` inside a `try`, behind a `HAS_TEMPORAL_FOCUS` flag) and
@@ -84,7 +84,7 @@ steps do not re-litigate them.
 ## Decision
 
 `TemporalFocus.jl` becomes the single canonical repository and package for spike-native
-temporal processing. Its boundary is deliberately **broadened once**, to add a pure
+temporal processing. Its boundary is deliberately **broadened once**, to add an
 activity-routing kernel and spike-stream feature extraction:
 
 ### TemporalFocus will own
@@ -96,8 +96,12 @@ activity-routing kernel and spike-stream feature extraction:
 - synaptic/readout application over spike-derived weights *(today)*
 - **spike-stream feature extraction** — counts, density, ISI statistics, burst
   detection, windowed and normalized feature vectors *(from SpikeStream.jl)*
-- **a pure activity-routing kernel** — deterministic scoring and normalization over
-  caller-provided activity summaries and readouts *(from NeuroPulse.jl)*
+- **an activity-routing kernel** — deterministic scoring and normalization over
+  caller-provided activity summaries and readouts *(from NeuroPulse.jl)*. Issue #53 calls
+  this "pure"; it is deterministic and self-contained but mutates its own router state,
+  so the admissible limits are spelled out in
+  [Why routing is admissible](#why-routing-is-admissible-but-the-rest-is-not) rather than
+  carried by that one word.
 
 ### TemporalFocus will still not own
 
@@ -115,10 +119,21 @@ weakened, by this ADR.
 
 ### Why routing is admissible but the rest is not
 
-The routing kernel imported from NeuroPulse is a pure function of caller-supplied
-`Float32` summaries: it allocates nothing on the hot path, performs no I/O, reads no
-clock, and updates no synaptic weight. It scores and normalizes; the caller owns the
-loop that feeds it. That is the same shape as the existing attention kernels.
+The routing kernel is **deterministic and self-contained, but not pure**: `update_routing!`
+mutates the router it is given, and the router carries a `readout_ema` across ticks. That
+distinction matters, because purity is not what makes the exception acceptable — the
+bounded mutation is. State the limits precisely, so this exception cannot be stretched:
+
+The kernel may mutate **only the pre-allocated buffers of the `RegionRouter` passed to
+it**. It must not perform I/O, read a clock or any ambient state, touch global state,
+allocate on the hot path, or update a synaptic weight. Given the same router state and
+the same `ActivityRegion` inputs, it produces the same outputs and the same next state.
+It scores and normalizes; the caller owns the loop that feeds it, decides when to tick,
+and owns the router's lifetime.
+
+**Any future routing change that needs more than that is out of scope**, and reviewers
+should treat the list above as the enforceable form of this exception rather than the
+word "pure".
 
 **`readout_ema` is not learning.** The router keeps an exponential moving average of each
 region's readout to compute "surprise". Reviewers must not read this as plasticity: there
@@ -411,7 +426,7 @@ stored in a `SpikeEvent`. Downstream that is not a rounding nuisance, it changes
 
 | Mode | Rejects | Use when |
 |---|---|---|
-| `:collisions` *(default)* | narrowing that **merges timestamps that were distinct**, changes their order, or exceeds `abs(t) > 2^24` | normal ingest |
+| `:collisions` *(default)* | narrowing that **merges timestamps that were distinct**, or that exceeds `abs(t) > 2^24` | normal ingest |
 | `:strict` | **any** timestamp that does not round-trip `Float64 → Float32 → Float64` | exact parity with a `Float64` pipeline is required |
 | `:none` | nothing | the caller has accepted lossy ingest |
 
@@ -437,7 +452,7 @@ Non-negotiable before the SpikeStream source is retired:
 - **large-magnitude timestamps that collide under `Float32` narrowing** (the hazard above)
 - a value that narrows lossily **without** colliding (e.g. `0.1`): accepted under
   `:collisions`, rejected under `:strict` — pins down exactly what the default promises
-- order-changing narrowing, and `abs(t) > 2^24`
+- `abs(t) > 2^24`
 - multi-neuron trains adapted per-neuron, asserting no cross-neuron ISI leakage
 - non-uniform `value` trains hitting the `ignore_values` guard
 - `TemporalBuffer` adapters: events outside `window` relative to `current_time` are
@@ -482,15 +497,23 @@ preserving; it is the reason the package installs anywhere with no resolution ri
 Each step is a separately reviewable PR. Steps 1–8 land before any repository is
 archived. Steps 9–11 are human/cross-repo actions outside this repository.
 
+**Every implementation step carries its own boundary update.** Because each step lands
+on `main` independently, deferring the whole scope rewrite to one late PR would leave
+`main` shipping code the enforced `AGENTS.md`/`README.md`/`REVIEW.md` scope says does not
+belong here — for several PRs. So steps 3 and 5 each extend the Scope list with exactly
+the surface they land, in the same PR. Step 7 is then the consolidated rewrite (the
+one-sentence README lead, `REVIEW.md`'s checklist, the `Float32` rule rewording, and the
+scope tests), not the first time the boundary text moves.
+
 | # | Step | Gate before proceeding |
 |---|---|---|
 | 1 | **This ADR** — inventory, dispositions, boundary decision | Owner accepts the boundary broadening and the UUID recommendation |
 | 2 | **Regenerate the canonical UUID** per `RELEASING.md` (`Project.toml`, `docs/Project.toml`, `benchmark/Project.toml`, and `Manifest.toml` via `Pkg.resolve()`) | Nothing depends on `7f3c9f2a-…`; done **before** any import so `v0.2.0` ships the final identity and no consumer migrates twice |
-| 3 | Port SpikeStream feature kernels + `test/fixtures/spike_vectors.json`, `Statistics` inlined | Frozen fixtures pass unmodified; `[deps]` still empty |
+| 3 | Port SpikeStream feature kernels + `test/fixtures/spike_vectors.json`, `Statistics` inlined; **add spike-stream feature extraction to the Scope lists in the same PR** | Frozen fixtures pass unmodified; `[deps]` still empty; boundary text matches what `main` now ships |
 | 4 | Add `SpikeTrain` ↔ timestamp adapters + the full edge-case suite from [Precision policy](#precision-policy) | Narrowing-collision test fails loudly without the guard, passes with it |
-| 5 | Port `ActivityRegion` + routing kernel, `Printf` dropped, `LinearAlgebra` dropped, constants renamed, `adapt_leak!` **excluded** | NeuroPulse's 899-line suite ports and passes (minus `adapt_leak!` tests) **and** `adapt_leak!`'s destination is decided — see the gate below |
+| 5 | Port `ActivityRegion` + routing kernel, `Printf` dropped, `LinearAlgebra` dropped, constants renamed, `adapt_leak!` **excluded**; **add the routing kernel to the Scope lists in the same PR**, with the admissible-mutation limits | NeuroPulse's 899-line suite ports and passes (minus `adapt_leak!` tests); boundary text matches what `main` now ships; **and both** `adapt_leak!`'s destination **and** the `spike_density` field-name question are decided — see the gates below |
 | 6 | Port deprecated aliases as wrapper functions with `depwarn` | `update_relevance!` etc. resolve and warn |
-| 7 | Update `README.md`, `AGENTS.md`, `REVIEW.md`, `docs/src/`, and add scope tests asserting the exported symbol set | Stated boundary matches shipped code exactly |
+| 7 | Consolidated docs pass: README one-sentence lead, `REVIEW.md` checklist, the scoped `Float32` rule, `docs/src/`, and scope tests asserting the exported symbol set | Stated boundary matches shipped code exactly |
 | 8 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); bump to `0.2.0` and update `CHANGELOG.md` | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix |
 | 9 | Add redirect READMEs to `NeuroPulse.jl` and `SpikeStream.jl` | *Cross-repo; requires write access to those repos* |
 | 10 | Migrate/triage open issues (NeuroPulse #40, #14; SpikeStream #27) and open PRs (NeuroPulse #41, SpikeStream #26) per rmems/.github#4 | Every open item has a documented destination |
@@ -518,6 +541,20 @@ step 5 comes up, the correct move is to carry `adapt_leak!` forward temporarily 
 deprecated, documented-as-out-of-scope function rather than to drop it — an acknowledged
 scope wart beats a broken upgrade path.
 
+### Gate: the `spike_density` field name must be settled before the router lands
+
+[Open question 4](#open-questions-requiring-a-human-decision) — whether
+`RegionRouter.spike_density` is renamed to `region_spike_rate` — decides a **public struct
+layout**. An implementer starting step 5 without an answer cannot know which field to
+port, which assertions to write, or which name the migration guide should teach; and
+changing it after the router lands is a second breaking change for anyone reading router
+state.
+
+So step 5 is gated on it, with the same shape of fallback as `adapt_leak!`: **if the
+decision is still open, port the field under its existing name `spike_density`** and
+leave the rename to a later, deliberate breaking change. Landing the old name is
+reversible; landing the wrong new one is not.
+
 ### History preservation
 
 `git subtree add --prefix=… <remote> main` (or `git merge --allow-unrelated-histories`
@@ -542,7 +579,7 @@ its identity exactly once; there is no second transition.
 | Consumer | Today | After v0.2.0 | Break? |
 |---|---|---|---|
 | **TemporalFocus v0.1.0 consumers** | `TemporalFocus` @ `7f3c9f2a-…`, attention API | `TemporalFocus` @ `<canonical>`, same API, plus features + routing | **API: no**, purely additive. **UUID: yes**, but v0.1.0 was never tagged or registered, so no consumer can be pinned to it; the audit found none. |
-| **NeuroPulse consumers** (`rmems/Limen-Capital`) | `TemporalFocus` @ `b7e4c3f2-…`, `[sources]` → `Limen-Neural/NeuroPulse.jl` @ `40e39206…`; loaded optionally, routing actually vendored | `TemporalFocus` @ `<canonical>`, `[sources]` → `rmems/TemporalFocus.jl`; `update_relevance!` etc. keep working with a deprecation warning | **Yes, two:** UUID + source URL must change; **`adapt_leak!` is removed** and must be re-sourced from wherever it is rehomed. Low urgency in practice — the `rev` pin is frozen and the load is behind a `try`, so nothing breaks until they choose to de-vendor. |
+| **NeuroPulse consumers** (`rmems/Limen-Capital`) | `TemporalFocus` @ `b7e4c3f2-…`, `[sources]` → `Limen-Neural/NeuroPulse.jl` @ `40e39206…`; loaded optionally, routing actually vendored | `TemporalFocus` @ `<canonical>`, `[sources]` → `rmems/TemporalFocus.jl` **with `rev` replaced by a consolidated commit (or dropped in favour of the `v0.2.0` tag)**; `update_relevance!` etc. keep working with a deprecation warning | **Yes, three:** UUID, source URL, **and the `rev` pin** must change — leaving `rev = "40e39206…"` in place would either fail to resolve or, if history is imported, check out the old NeuroPulse tree and its `b7e4c3f2-…` identity instead of consolidated v0.2.0; **`adapt_leak!` is removed** and must be re-sourced from wherever it is rehomed. Low urgency in practice — the `rev` pin is frozen and the load is behind a `try`, so nothing breaks until they choose to de-vendor. |
 | **SpikeStream consumers** | `SpikeStream` @ `a3c7f1e2-…`, tag `v0.1.0` | `using TemporalFocus` @ `<canonical>`; function names, signatures, and `Float64` return types unchanged | **Yes, one:** package name + UUID. No API change. |
 | **`rmems/kinetic-signals`** (Rust) | Fixture-parity contract with `SpikeStream.jl`, no FFI | Same fixtures, now under `TemporalFocus.jl` | Docs-only. Output ranges are unchanged and remain a contract. |
 

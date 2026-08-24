@@ -40,7 +40,7 @@ If a feature requires knowledge of tokens, embeddings, dense attention semantics
 [ADR 0001](docs/adr/0001-consolidate-neuropulse-and-spikestream.md) records an accepted
 decision to consolidate `rmems/NeuroPulse.jl` and `rmems/SpikeStream.jl` into this
 repository, which broadens the boundary above to add spike-stream feature extraction and
-a pure activity-routing kernel. **That change is not yet in effect** — the scope
+an activity-routing kernel. **That change is not yet in effect** — the scope
 statement above describes what this package ships today, and the ADR describes what it
 will own once the migration lands. Everything else in the "does not own" list stays
 excluded, including runtime, plasticity, dense/LLM, and finance semantics.
