@@ -14,8 +14,9 @@ state behind or abort the rest of the run.
 
 Scripts listed in `ORDERED_EXPERIMENTS` but not yet added to the repository are
 reported as pending and skipped, so the runner works while the experiment wave
-lands incrementally. Any other `*.jl` file directly under `experiments/` is
-discovered automatically and runs after the known ones, sorted by name.
+lands incrementally. Any other `*.jl` file directly under `experiments/` whose
+name matches `SCRIPT_PATTERN` is discovered automatically and runs after the
+known ones, sorted by name.
 
 Exit code is `0` when every selected script succeeds and `1` otherwise.
 """
@@ -30,6 +31,11 @@ usage: julia --project=experiments experiments/run_all.jl [--list] [script...]
 
 const EXPERIMENT_DIR = @__DIR__
 const RUNNER_FILE = basename(@__FILE__)
+
+# Julia's backticks build an argv directly (no shell is involved), but experiment
+# scripts are still restricted to plain file names so nothing unexpected in
+# experiments/ can reach the child process command line.
+const SCRIPT_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]*\.jl$"
 
 # Narrative order used by the experiment gallery. The harness smoke test runs
 # first so a broken harness fails fast.
@@ -47,7 +53,8 @@ const ORDERED_EXPERIMENTS = [
 function _discover()
     present = Set(
         name for name in readdir(EXPERIMENT_DIR) if
-        endswith(name, ".jl") && name != RUNNER_FILE && isfile(joinpath(EXPERIMENT_DIR, name))
+        occursin(SCRIPT_PATTERN, name) && name != RUNNER_FILE &&
+        isfile(joinpath(EXPERIMENT_DIR, name))
     )
     known = [name for name in ORDERED_EXPERIMENTS if name in present]
     extra = sort!([name for name in present if name ∉ ORDERED_EXPERIMENTS])
@@ -79,6 +86,8 @@ function _select(available::Vector{String}, args::Vector{String})
 end
 
 function _run_script(name::AbstractString)
+    occursin(SCRIPT_PATTERN, name) ||
+        throw(ArgumentError("invalid experiment script name: $(repr(name))"))
     script = joinpath(EXPERIMENT_DIR, name)
     cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(EXPERIMENT_DIR) --color=$(Base.have_color === true ? "yes" : "no") $(script)`
     started = time()
