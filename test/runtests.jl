@@ -4,6 +4,12 @@ using TemporalFocus
 using Test
 using Random
 
+# The experiment harness depends only on standard libraries, so the artifact
+# contract used by experiments/ is covered here without instantiating
+# experiments/Project.toml.
+include(joinpath(@__DIR__, "..", "experiments", "src", "ExperimentUtils.jl"))
+using .ExperimentUtils
+
 @testset "TemporalFocus" begin
     @testset "Discrete Attention" begin
         q = SpikeTrain([
@@ -580,4 +586,85 @@ using Random
         end
     end
 
+end
+
+@testset "Experiment harness" begin
+    mktempdir() do tmp
+        withenv("TEMPORALFOCUS_RESULTS_DIR" => tmp) do
+            @testset "repo-relative paths" begin
+                root = repo_root()
+                @test isabspath(root)
+                @test isfile(joinpath(root, "Project.toml"))
+                @test isfile(joinpath(root, "experiments", "run_all.jl"))
+            end
+
+            @testset "result_dir / figure_path" begin
+                dir = result_dir("smoke-slug")
+                @test dir == joinpath(tmp, "smoke-slug")
+                @test isdir(dir)
+                @test figure_path("smoke-slug") == joinpath(dir, "figure.png")
+                @test figure_path("smoke-slug", "curves.png") == joinpath(dir, "curves.png")
+
+                @test_throws ArgumentError result_dir("nested/slug")
+                @test_throws ArgumentError result_dir("../escape")
+                @test_throws ArgumentError result_dir("")
+                @test_throws ArgumentError figure_path("smoke-slug", "../figure.png")
+            end
+
+            @testset "write_config" begin
+                path = write_config(
+                    "smoke-slug",
+                    Dict(
+                        "seed" => 42,
+                        "tau" => 0.2f0,
+                        "mode" => :temporal,
+                        "taus" => Float32[0.1, 0.25],
+                    ),
+                )
+                text = read(path, String)
+                @test path == joinpath(tmp, "smoke-slug", "config.toml")
+                @test occursin("seed = 42", text)
+                # Float32 is widened through its shortest decimal form.
+                @test occursin("tau = 0.2\n", text)
+                @test occursin("taus = [0.1, 0.25]", text)
+                @test occursin("mode = \"temporal\"", text)
+                @test occursin("[provenance]", text)
+                @test occursin("julia_version = \"$(VERSION)\"", text)
+
+                # A caller-supplied provenance table is preserved.
+                supplied = write_config(
+                    "smoke-slug",
+                    Dict("provenance" => Dict("git_commit" => "abc123")),
+                )
+                @test occursin("git_commit = \"abc123\"", read(supplied, String))
+            end
+
+            @testset "write_metrics" begin
+                rows = [
+                    (dt = 0.1f0, weight = 0.6065307f0, label = "near"),
+                    (dt = -0.1f0, weight = 0.6065307f0, label = "far, noisy"),
+                ]
+                path = write_metrics("smoke-slug", rows)
+                lines = readlines(path)
+                @test path == joinpath(tmp, "smoke-slug", "metrics.csv")
+                @test lines[1] == "dt,weight,label"
+                @test lines[2] == "0.1,0.6065307,near"
+                @test lines[3] == "-0.1,0.6065307,\"far, noisy\""
+
+                # Same rows in, same bytes out.
+                @test read(write_metrics("smoke-slug", rows), String) == read(path, String)
+
+                @test_throws ArgumentError write_metrics("smoke-slug", NamedTuple[])
+                @test_throws ArgumentError write_metrics("smoke-slug", [(a = 1,), (b = 2,)])
+                @test_throws ArgumentError write_metrics("smoke-slug", [1, 2])
+            end
+
+            @testset "write_summary" begin
+                path = write_summary("smoke-slug", "# Result\n\nHypothesis supported.")
+                @test path == joinpath(tmp, "smoke-slug", "summary.md")
+                @test read(path, String) == "# Result\n\nHypothesis supported.\n"
+                @test read(write_summary("smoke-slug", "already\n"), String) == "already\n"
+            end
+        end
+    end
 end

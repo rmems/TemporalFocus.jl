@@ -38,6 +38,10 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 # Build documentation (Documenter.jl; not a root dependency)
 julia --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 julia --project=docs docs/make.jl
+
+# Run experiments (CairoMakie; not a root dependency, not in CI)
+julia --project=experiments -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+julia --project=experiments experiments/run_all.jl
 ```
 
 ## Code style
