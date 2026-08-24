@@ -673,10 +673,15 @@ data:
   the gate disabled (`window = Inf`). They depend on **τ only**.
 - The difference between those and the gated masses is attributable to the **window only**.
 
-**Panels B and C are that decomposition, drawn side by side.** They plot the same
-quantity on the same scale; C has the hard gate switched off. C is therefore a function of
-τ alone — perfectly flat in the window direction — and every place where B is pale while C
-is red is a place where the hard window, not decay, is doing the suppressing.
+**Panels B and C are the gated and un-gated versions of the same ratio, side by side.** C
+switches the hard gate off, so it is a function of τ alone — perfectly flat in the window
+direction — and any cell where B is pale while C is red is a cell where the hard window,
+not decay, is doing the suppressing.
+
+`stale_leakage` is a **ratio**, though, so B and C are a counterfactual *comparison*, not
+an additive split: the hard gate moves both the numerator and the denominator, and `B - C`
+is not itself a "window contribution". The additive decomposition lives in the mass
+columns, quantified next.
 
 Concretely:
 
@@ -747,7 +752,7 @@ above is a verbatim row of `metrics.csv`.
 - `figure.png` — the memory control panel:
   - **A** target attention share over the plane
   - **B** stale leakage over the plane (τ *and* window)
-  - **C** the same leakage with the hard gate off (τ only) — B minus C is the window
+  - **C** the same leakage with the hard gate off (τ only) — B's counterfactual
   - **D** regime map, with the top-1-correct boundary outlined
   - **E** slice at fixed τ, sweeping the window — flat steps at the event lags
   - **F** slice at fixed window, sweeping τ — smooth sigmoids, no discontinuity
