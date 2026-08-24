@@ -1,0 +1,39 @@
+experiments/src/ExperimentUtils.jl
+  s_0c26100e940a5c::t_e83ae7810316ad 70-89,94-96,99
+  s_0c26100e940a5c::t_f9bb95b4d1b145 127-128,131
+  s_0c26100e940a5c::t_8b01da81c40f52 141-147,153-159
+experiments/focus_under_fire.jl
+  s_0c26100e940a5c::t_fd158a623a5768 851-861
+  s_0c26100e940a5c::t_9078cb3e746888 757,759-769
+  s_0c26100e940a5c::t_bebaa1748db642 820-841
+experiments/results/focus_under_fire/summary.md
+  s_0c26100e940a5c::t_c278236dcb3c1d 95-105
+  s_0c26100e940a5c::t_e8b65f836b0f94 324-345
+experiments/Project.toml
+  s_0c26100e940a5c::t_35c2ab4518dee1 21-27
+  s_0c26100e940a5c::t_95184c6d31b70a 28
+experiments/test/runtests.jl
+  s_0c26100e940a5c::t_408d42f415f466 140-150
+  s_0c26100e940a5c::t_48a10a52768ba3 63-67
+  s_0c26100e940a5c::t_bd88876e15d49d 118-127
+experiments/results/focus_under_fire/config.toml
+  s_0c26100e940a5c::t_e8b65f836b0f94 15-20
+.gitignore
+  s_0c26100e940a5c::t_5e15620b056bdb 3-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ac7fa62952cadd467d4055aff034c7125403d271",
+  "prompts": {},
+  "sessions": {
+    "s_0c26100e940a5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "491ce194-6eb8-4a07-8e74-cb51fef4e2b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
