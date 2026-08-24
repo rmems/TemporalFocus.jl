@@ -114,6 +114,18 @@ const PROVENANCE_KEYS = Set([
 "Provenance keys that identify the code version a result was produced from."
 const COMMIT_KEYS = ["commit", "git_commit", "commit_sha", "sha", "revision", "rev", "git_rev"]
 
+"""
+    leaf_key(flattened) -> String
+
+Last component of a flattened config key, lowercased. Provenance is classified on
+the leaf so a script that groups its fields (`[metadata] commit = ...` flattening
+to `metadata.commit`) is still recognized as recording a code version.
+"""
+leaf_key(flattened::AbstractString) = lowercase(String(last(split(flattened, '.'))))
+
+is_provenance_key(flattened::AbstractString) = leaf_key(flattened) in PROVENANCE_KEYS
+is_commit_key(flattened::AbstractString) = leaf_key(flattened) in COMMIT_KEYS
+
 const REPO_URL = "https://github.com/rmems/TemporalFocus.jl"
 
 "Repository root, inferred from this file's location (`<root>/docs/gallery.jl`)."
@@ -373,7 +385,7 @@ function render_setup(io::IO, result::ResultSet, root::AbstractString)
         println(io)
         return
     end
-    pairs = filter(p -> !(lowercase(first(p)) in PROVENANCE_KEYS), flatten_config(result.config))
+    pairs = filter(p -> !is_provenance_key(first(p)), flatten_config(result.config))
     if isempty(pairs)
         println(io, "`config.toml` records no setup parameters beyond provenance fields.")
         println(io)
@@ -496,10 +508,10 @@ function render_provenance(io::IO, result::ResultSet, root::AbstractString)
     println(io)
 
     prov = result.config === nothing ? Pair{String,String}[] :
-           filter(p -> lowercase(first(p)) in PROVENANCE_KEYS, flatten_config(result.config))
+           filter(p -> is_provenance_key(first(p)), flatten_config(result.config))
     recorded_commit = nothing
     for (key, value) in prov
-        if lowercase(key) in COMMIT_KEYS && !isempty(strip(value))
+        if is_commit_key(key) && !isempty(strip(value))
             recorded_commit = value
             break
         end

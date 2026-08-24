@@ -653,6 +653,23 @@ using Random
             @test !occursin("Provenance incomplete", page)
         end
 
+        @testset "provenance grouped in a nested table" begin
+            results = joinpath(mktempdir(), "results")
+            slug = first(Gal.ENTRIES).slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(dir, "config.toml"),
+                "[params]\ntau = 2.0\n\n[metadata]\ncommit = \"feedface\"\n")
+
+            _, page, _ = _build(results)
+
+            # A commit recorded under a table still counts as provenance, and is
+            # not mistaken for a setup parameter.
+            @test occursin("`metadata.commit`", page)
+            @test !occursin("Provenance incomplete", page)
+            @test occursin("`params.tau`", page)
+        end
+
         @testset "partial artifacts degrade honestly" begin
             results = joinpath(mktempdir(), "results")
             slug = Gal.ENTRIES[2].slug
