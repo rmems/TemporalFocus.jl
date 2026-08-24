@@ -1,0 +1,23 @@
+test/runtests.jl
+  s_0c26100e940a5c::t_c170dffe477b04 656-672
+docs/gallery.jl
+  s_0c26100e940a5c::t_8ead1baead8017 117-128,388,511,514
+docs/make.jl
+  s_0c26100e940a5c::t_688ab6f384d6db 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "540263689fbddc5344b3cba0be2951592e4700bd",
+  "prompts": {},
+  "sessions": {
+    "s_0c26100e940a5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "491ce194-6eb8-4a07-8e74-cb51fef4e2b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
