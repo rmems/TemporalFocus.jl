@@ -1,0 +1,31 @@
+deterministic = true
+julia_version = "1.12.6"
+kernel = "spike_attention_continuous"
+n_conditions = 625
+n_neurons = 3
+random_draws = false
+readout = "identity (transparent)"
+seed = 20260823
+slug = "memory_gate"
+tau_grid = [1.0, 1.268, 1.609, 2.04, 2.587, 3.281, 4.162, 5.278, 6.694, 8.49, 10.77, 13.66, 17.32, 21.97, 27.86, 35.33, 44.81, 56.84, 72.08, 91.42, 115.9, 147.1, 186.5, 236.5, 300.0]
+time_unit = "ms (nominal; TemporalFocus is unit-agnostic Float32)"
+window_grid = [3.0, 3.601, 4.322, 5.188, 6.227, 7.475, 8.972, 10.77, 12.93, 15.52, 18.62, 22.35, 26.83, 32.21, 38.66, 46.4, 55.7, 66.86, 80.25, 96.32, 115.6, 138.8, 166.6, 199.9, 240.0]
+
+[scene]
+competitor_lag = 2.5
+competitor_neuron = 2
+competitor_value = 0.3
+signal_neuron = 1
+source_value = 1.0
+stale_lags = [60.0, 95.0]
+stale_value = 1.0
+t_now = 0.0
+target_lag = 8.0
+target_value = 1.0
+unrelated_lag = 150.0
+unrelated_neuron = 3
+unrelated_value = 0.9
+
+[thresholds]
+leak_max = 0.2
+target_floor = 0.05
