@@ -60,13 +60,16 @@ _toml_value(value) = _toml_scalar(value)
 
 Write `cfg` to `experiments/results/<slug>/config.toml` as a flat TOML table
 with keys sorted for a stable diff. Values may be scalars or vectors of
-scalars. Returns the path written.
+scalars. Keys of any type are accepted and stringified for output; the
+original key is never used to re-index `cfg`, so symbol-keyed configs work.
+Returns the path written.
 """
 function write_config(slug::AbstractString, cfg::AbstractDict)
     path = joinpath(result_dir(slug), "config.toml")
+    entries = sort!([(string(key), value) for (key, value) in cfg]; by = first)
     open(path, "w") do io
-        for key in sort!(collect(string.(keys(cfg))))
-            println(io, key, " = ", _toml_value(cfg[key]))
+        for (key, value) in entries
+            println(io, key, " = ", _toml_value(value))
         end
     end
     return path

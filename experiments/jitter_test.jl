@@ -304,6 +304,64 @@ function max_step_drop(retentions::AbstractVector{<:Real})
     return drop
 end
 
+"True when a curve never decreases along the jitter grid."
+_is_nondecreasing(values::AbstractVector{<:Real}) =
+    all(i -> values[i] <= values[i+1], 1:length(values)-1)
+
+"True when a curve rises again at some larger jitter scale after falling."
+_has_recovery(values::AbstractVector{<:Real}) =
+    any(i -> values[i+1] > values[i], 1:length(values)-1)
+
+"""
+    widest_window_agreement(rows) -> NamedTuple
+
+Compare the widest continuous window against the temporal kernel row for row,
+rather than only comparing their tolerance envelopes. `first_divergence` is the
+smallest jitter scale at which any (τ, seed) pair disagrees on total admitted
+attention — `nothing` if the two kernels agree everywhere on this grid — and
+`max_rel_gap` is the largest relative gap anywhere on the grid.
+"""
+function widest_window_agreement(rows)
+    widest = maximum(WINDOWS)
+    reference = Dict((r.tau, r.jitter, r.seed) => r.total_attention
+                     for r in rows if r.kernel == "temporal")
+    first_divergence = nothing
+    max_rel_gap = 0.0
+    for row in rows
+        (row.kernel == "continuous" && row.window == widest) || continue
+        total = reference[(row.tau, row.jitter, row.seed)]
+        (total > 0.0f0 && row.total_attention != total) || continue
+        max_rel_gap = max(max_rel_gap, abs(row.total_attention - total) / total)
+        if first_divergence === nothing || row.jitter < first_divergence
+            first_divergence = row.jitter
+        end
+    end
+    return (widest = widest, first_divergence = first_divergence, max_rel_gap = max_rel_gap)
+end
+
+"""
+    threshold_ties(summaries) -> Int
+
+Number of swept conditions whose top-1 retention lands exactly on
+`RETENTION_THRESHOLD`. `tolerance_sigma` accepts these, so they are the
+weakest evidence behind any σ* that depends on them.
+"""
+function threshold_ties(summaries)
+    ties = 0
+    for config in _kernel_configs(), jitter in JITTERS
+        summary = summaries[(String(config.kernel), config.tau, config.window, jitter)]
+        summary.n_seeds > 1 && summary.retention == RETENTION_THRESHOLD && (ties += 1)
+    end
+    return ties
+end
+
+"Number of swept configurations whose top-1 retention rises again at a larger jitter scale."
+function retention_recoveries(summaries)
+    return count(_kernel_configs()) do config
+        _has_recovery(_curve(summaries, String(config.kernel), config.tau, config.window, :retention))
+    end
+end
+
 # ---------------------------------------------------------------------------
 # Figure
 # ---------------------------------------------------------------------------
@@ -623,7 +681,7 @@ function _classify_continuous(summaries)
 end
 
 "Result 3: continuous degradation, separating graceful decay from the two abrupt failure modes."
-function _summary_continuous(io, summaries)
+function _summary_continuous(io, rows, summaries)
     println(io, "## Result 3 — continuous attention has two separate failure modes")
     println(io)
     _summary_regime_map(io, summaries)
@@ -632,11 +690,6 @@ function _summary_continuous(io, summaries)
     classes = _classify_continuous(summaries)
     collapsed = length(classes.collapse_windows)
     steep = length(classes.steep_taus)
-    widest_window = maximum(WINDOWS)
-    window_matches_temporal = all(TAUS) do tau
-        isequal(tolerance_sigma(_curve(summaries, "continuous", tau, widest_window, :retention)),
-            tolerance_sigma(_curve(summaries, "temporal", tau, NaN32, :retention)))
-    end
 
     println(io, @sprintf("Of the %d continuous configurations that start out selecting the target, **%d degrade gracefully** ",
             classes.graceful + collapsed + steep, classes.graceful),
@@ -659,10 +712,39 @@ function _summary_continuous(io, summaries)
     println(io, "The honest statement is therefore narrower than \"narrow windows fail abruptly\". A narrow window is the only ",
         "thing that produces *collapse*, but a short τ produces an equally sharp *reordering* at every window width, ",
         "including the widest. ",
-        window_matches_temporal ?
-            @sprintf("Conversely, a window several times larger than the jitter reproduces the temporal kernel exactly: the window = %.2f column of the map above matches the temporal column of panel D at every τ. ", widest_window) :
-            @sprintf("The window = %.2f column of the map above does not fully match the temporal column of panel D, so the widest window on this grid still gates some pairs. ", widest_window),
         "Panel C of `figure.png` shows both shapes on one axis, with dotted lines marking collapse rate.")
+    println(io)
+    _summary_widest_window(io, rows)
+    return nothing
+end
+
+"""
+When the widest window stops behaving like an unbounded one, compared row by
+row rather than by tolerance envelope alone.
+"""
+function _summary_widest_window(io, rows)
+    agreement = widest_window_agreement(rows)
+    println(io, "### Where the widest window stops being a no-op")
+    println(io)
+    if agreement.first_divergence === nothing
+        println(io, @sprintf("Every `window = %.2f` row matches the corresponding temporal row exactly on this grid, ", agreement.widest),
+            "so the widest window sampled here never gates a pair and is indistinguishable from the unbounded kernel.")
+        println(io)
+        return nothing
+    end
+    println(io, @sprintf("The `window = %.2f` column of the map above has the same tolerated σ* as the temporal column, but ", agreement.widest),
+        "matching envelopes are not the same thing as matching outputs, and row-by-row the two kernels do part company. ",
+        @sprintf("Total admitted attention is identical for every (τ, seed) pair up to σ = %s, and first diverges at **σ = %s**, ",
+            _jitter_label(JITTERS[max(1, findfirst(==(agreement.first_divergence), JITTERS) - 1)]),
+            _jitter_label(agreement.first_divergence)),
+        @sprintf("opening a relative gap of up to **%.1f%%**.", 100 * agreement.max_rel_gap))
+    println(io)
+    println(io, @sprintf("That is the expected behaviour rather than a defect: the scene's largest baseline offset is %.2f, so once σ ",
+            maximum(maximum(abs, offsets) for offsets in CONTEXT_OFFSETS)),
+        @sprintf("grows comparable to the headroom between that offset and the window, jitter starts carrying pairs past `|Δt| ≤ %.2f` ", agreement.widest),
+        "and the window begins gating them. The window is a no-op only while the jitter stays small relative to it — which is ",
+        "the same boundary effect that makes the narrow windows collapse, just displaced to a much larger σ. Any claim that a ",
+        "wide window \"reproduces the temporal kernel\" therefore has to be qualified by the jitter scale.")
     println(io)
     return nothing
 end
@@ -688,22 +770,51 @@ function _summary_drift(io, summaries)
     isempty(table_rows) || _markdown_table(io,
         ["τ", "last σ with full retention", "relative drift there", "first σ that loses a seed", "relative drift there"],
         table_rows)
-    println(io, "Relative L2 drift rises continuously from the very first non-zero jitter scale, well before top-1 ",
-        "changes: the attention vector is already moving while the selected neuron is still correct. Top-1 stability is ",
-        "the discrete decision boundary; vector drift is the continuous signal that predicts when the boundary is about ",
-        "to be crossed. Reporting either alone would misstate the robustness.")
+    println(io, "Relative L2 drift is already non-zero at the smallest non-zero jitter scale and reaches a sizeable ",
+        "fraction of the baseline norm well before top-1 changes: the attention vector is moving while the selected ",
+        "neuron is still correct. Top-1 stability is the discrete decision boundary; vector drift is the continuous ",
+        "signal that shows the boundary being approached. Reporting either alone would misstate the robustness.")
+    println(io)
+
+    dips = String[]
+    for tau in TAUS
+        drifts = _curve(summaries, "temporal", tau, NaN32, :drift_mean)
+        _is_nondecreasing(drifts) && continue
+        idx = findfirst(i -> drifts[i+1] < drifts[i], 1:length(drifts)-1)
+        push!(dips, @sprintf("τ = %.2f dips from %.3f at σ = %s to %.3f at σ = %s",
+            tau, drifts[idx], _jitter_label(JITTERS[idx]), drifts[idx+1], _jitter_label(JITTERS[idx+1])))
+    end
+    if isempty(dips)
+        println(io, @sprintf("On this grid the seed-mean drift happens to be non-decreasing in σ for all %d τ values, but that is ", length(TAUS)),
+            "an observation about this grid, not a guarantee.")
+    else
+        println(io, @sprintf("Drift does **not** grow monotonically, though. For %d of the %d τ values the seed-mean drift dips at some ",
+                length(dips), length(TAUS)),
+            "point on the grid (", join(dips, "; "), "). Paired Gaussian perturbations move a spike toward the source time ",
+            "as readily as away from it, so a larger σ can happen to land a scene closer to the baseline than a smaller one did. ",
+            "The claim supported by the data is that drift *starts early*, not that it *rises steadily*.")
+    end
     println(io)
     return nothing
 end
 
-function _summary_caveats(io)
+function _summary_caveats(io, summaries)
+    recoveries = retention_recoveries(summaries)
+    ties = threshold_ties(summaries)
+
     println(io, "## Honest caveats")
     println(io)
-    println(io, "- The tolerated σ* values are grid-resolved, not interpolated. They can only take values from the ",
-        "jitter grid in `config.toml`, so they are lower bounds on the true threshold, quantized by that grid.")
-    println(io, @sprintf("- Retention is averaged over %d seeds, so it is quantized to multiples of %.3f, and the %.0f%% ",
+    println(io, "- The tolerated σ* values are grid-resolved **estimates**, not bounds. They can only take values from the ",
+        "jitter grid in `config.toml`, and retention is not monotone in σ — ",
+        @sprintf("%d of the %d swept configurations regain the target at a larger scale after losing it, ", recoveries, length(_kernel_configs())),
+        "because a Gaussian perturbation can carry a spike back toward the source time. Two passing grid points therefore ",
+        "do not rule out a failure at an unsampled scale between them. Read σ* as \"the largest sampled scale that held\", ",
+        "not as a bound on the continuous threshold.")
+    println(io, @sprintf("- Retention is averaged over %d seeds, so it is quantized to multiples of %.3f. The %.0f%% threshold is ",
             length(SEEDS), 1 / length(SEEDS), RETENTION_THRESHOLD * 100),
-        "threshold sits between two attainable levels rather than on one.")
+        @sprintf("exactly attainable (%d of %d seeds) and `tolerance_sigma` accepts it, so the %d conditions that land on it ",
+            Int(RETENTION_THRESHOLD * length(SEEDS)), length(SEEDS), ties),
+        "sit on a literal coin-flip boundary. Any σ* resting on one of those conditions is the weakest evidence in the tables.")
     println(io, "- The zero-jitter baseline is a single deterministic evaluation, not a seed average, so its row has no ",
         "spread. That is by construction: with σ = 0 the perturbation term vanishes and every seed yields the identical scene.")
     println(io, "- Conclusions are tied to this scene. The tolerance numbers scale with the target's baseline alignment ",
@@ -735,9 +846,9 @@ function build_summary(rows, summaries, baselines)
     _summary_header(io)
     _summary_discrete(io, rows)
     _summary_temporal(io, summaries, baselines)
-    _summary_continuous(io, summaries)
+    _summary_continuous(io, rows, summaries)
     _summary_drift(io, summaries)
-    _summary_caveats(io)
+    _summary_caveats(io, summaries)
     return String(take!(io))
 end
 

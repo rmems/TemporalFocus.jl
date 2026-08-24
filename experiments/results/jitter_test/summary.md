@@ -69,7 +69,13 @@ Of the 34 continuous configurations that start out selecting the target, **18 de
 - **Window-boundary collapse (6 configurations, at window ∈ {0.10}).** Jitter pushes the target's context spikes past `|Δt| ≤ window`, the kernel admits no pairs at all, and attention goes to exactly zero — there is no second-best neuron to fall back on. This only happens for windows comparable to the target's 0.04 alignment error.
 - **Steep decay without collapse (10 configurations, at τ ∈ {0.05, 0.10} and window ∈ {0.25, 0.50, 1.00, 2.00, 4.00}).** These keep admitting pairs, so the failure is a reordering rather than a collapse, yet retention still falls by at least 50% in a single grid step. A short τ makes the recency weight sharp enough that one jitter step moves many seeds across the decision boundary at once.
 
-The honest statement is therefore narrower than "narrow windows fail abruptly". A narrow window is the only thing that produces *collapse*, but a short τ produces an equally sharp *reordering* at every window width, including the widest. Conversely, a window several times larger than the jitter reproduces the temporal kernel exactly: the window = 4.00 column of the map above matches the temporal column of panel D at every τ. Panel C of `figure.png` shows both shapes on one axis, with dotted lines marking collapse rate.
+The honest statement is therefore narrower than "narrow windows fail abruptly". A narrow window is the only thing that produces *collapse*, but a short τ produces an equally sharp *reordering* at every window width, including the widest. Panel C of `figure.png` shows both shapes on one axis, with dotted lines marking collapse rate.
+
+### Where the widest window stops being a no-op
+
+The `window = 4.00` column of the map above has the same tolerated σ* as the temporal column, but matching envelopes are not the same thing as matching outputs, and row-by-row the two kernels do part company. Total admitted attention is identical for every (τ, seed) pair up to σ = 0.4, and first diverges at **σ = 0.8**, opening a relative gap of up to **3.4%**.
+
+That is the expected behaviour rather than a defect: the scene's largest baseline offset is 2.40, so once σ grows comparable to the headroom between that offset and the window, jitter starts carrying pairs past `|Δt| ≤ 4.00` and the window begins gating them. The window is a no-op only while the jitter stays small relative to it — which is the same boundary effect that makes the narrow windows collapse, just displaced to a much larger σ. Any claim that a wide window "reproduces the temporal kernel" therefore has to be qualified by the jitter scale.
 
 ## Result 4 — top-1 stability and vector drift disagree, and both are needed
 
@@ -81,12 +87,14 @@ The honest statement is therefore narrower than "narrow windows fail abruptly". 
 | 0.50 | 0.2 | 0.217 | 0.4 | 0.406 |
 | 1.00 | 0.1 | 0.053 | 0.2 | 0.117 |
 
-Relative L2 drift rises continuously from the very first non-zero jitter scale, well before top-1 changes: the attention vector is already moving while the selected neuron is still correct. Top-1 stability is the discrete decision boundary; vector drift is the continuous signal that predicts when the boundary is about to be crossed. Reporting either alone would misstate the robustness.
+Relative L2 drift is already non-zero at the smallest non-zero jitter scale and reaches a sizeable fraction of the baseline norm well before top-1 changes: the attention vector is moving while the selected neuron is still correct. Top-1 stability is the discrete decision boundary; vector drift is the continuous signal that shows the boundary being approached. Reporting either alone would misstate the robustness.
+
+Drift does **not** grow monotonically, though. For 1 of the 6 τ values the seed-mean drift dips at some point on the grid (τ = 0.05 dips from 0.132 at σ = 0.02 to 0.124 at σ = 0.05). Paired Gaussian perturbations move a spike toward the source time as readily as away from it, so a larger σ can happen to land a scene closer to the baseline than a smaller one did. The claim supported by the data is that drift *starts early*, not that it *rises steadily*.
 
 ## Honest caveats
 
-- The tolerated σ* values are grid-resolved, not interpolated. They can only take values from the jitter grid in `config.toml`, so they are lower bounds on the true threshold, quantized by that grid.
-- Retention is averaged over 8 seeds, so it is quantized to multiples of 0.125, and the 50% threshold sits between two attainable levels rather than on one.
+- The tolerated σ* values are grid-resolved **estimates**, not bounds. They can only take values from the jitter grid in `config.toml`, and retention is not monotone in σ — 3 of the 43 swept configurations regain the target at a larger scale after losing it, because a Gaussian perturbation can carry a spike back toward the source time. Two passing grid points therefore do not rule out a failure at an unsampled scale between them. Read σ* as "the largest sampled scale that held", not as a bound on the continuous threshold.
+- Retention is averaged over 8 seeds, so it is quantized to multiples of 0.125. The 50% threshold is exactly attainable (4 of 8 seeds) and `tolerance_sigma` accepts it, so the 11 conditions that land on it sit on a literal coin-flip boundary. Any σ* resting on one of those conditions is the weakest evidence in the tables.
 - The zero-jitter baseline is a single deterministic evaluation, not a seed average, so its row has no spread. That is by construction: with σ = 0 the perturbation term vanishes and every seed yields the identical scene.
 - Conclusions are tied to this scene. The tolerance numbers scale with the target's baseline alignment error (0.04 time units here) and with the coincidence-mass gap between the target and the loud distractor. The qualitative shapes — flat for discrete, smooth for temporal, cliff-edged for narrow continuous windows — are what should carry over.
 - `randn` draws come from `Random.MersenneTwister`, which is reproducible for a given seed on a given Julia version. The recorded seeds reproduce this run exactly on the Julia version noted in `config.toml`.
