@@ -72,6 +72,11 @@ julia --project=docs docs/make.jl
 - If a PR introduces STDP, plasticity, or learning rules, it belongs in a dedicated plasticity package
 - If a PR touches tokenization, embeddings, or transformer logic, it belongs in a different repo
 - Reviewers should reject scope creep with a redirect to the appropriate package
+- **Pending boundary change:** [ADR 0001](docs/adr/0001-consolidate-neuropulse-and-spikestream.md)
+  accepts a one-time broadening to also own spike-stream feature extraction and a pure
+  activity-routing kernel (consolidating `rmems/NeuroPulse.jl` and `rmems/SpikeStream.jl`).
+  It is **not in effect** — enforce the Scope list above until the migration lands and
+  updates it. The out-of-scope list is unchanged either way.
 
 ## Cursor Cloud specific instructions
 
