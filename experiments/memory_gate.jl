@@ -161,10 +161,18 @@ _r6(x::Real) = isfinite(x) ? round(Float32(x); sigdigits = 6) : Float32(x)
 # 0.30000001192092896). Round it back off so config.toml stays readable.
 _f64(x::Real) = round(Float64(x); sigdigits = 6)
 
-function _fmt(x::Real; digits::Int = 4)
+# Two fixed precisions rather than `@sprintf("%.*f", digits, x)`: dynamic
+# precision in Printf needs Julia 1.10, and this repo targets 1.9+.
+function _fmt(x::Real)
     isnan(x) && return "NaN"
     isinf(x) && return x > 0 ? "Inf" : "-Inf"
-    return @sprintf("%.*f", digits, x)
+    return @sprintf("%.4f", x)
+end
+
+function _fmt2(x::Real)
+    isnan(x) && return "NaN"
+    isinf(x) && return x > 0 ? "Inf" : "-Inf"
+    return @sprintf("%.2f", x)
 end
 
 # ---------------------------------------------------------------------------
@@ -508,7 +516,7 @@ function slice_table_over_windows(i)
         @printf(io, "| %.6g | %s | %d/2 | %s | %s | %s | %s | %s | %s | %s |\n",
             r.window, r.target_in_window ? "yes" : "no", r.n_stale_in_window,
             _fmt(r.target_mass), _fmt(r.stale_mass), _fmt(r.target_share),
-            _fmt(r.stale_leakage), _fmt(r.target_stale_ratio; digits = 2),
+            _fmt(r.stale_leakage), _fmt2(r.target_stale_ratio),
             r.top1_neuron == 0 ? "—" : string(r.top1_neuron), r.regime)
     end
     return rstrip(String(take!(io)))
