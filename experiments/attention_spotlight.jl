@@ -121,6 +121,12 @@ end
 
 Build the recorded scenario: per-phase bursts on the spotlighted neuron plus
 weak background chatter on the others, sorted into causal arrival order.
+
+Both halves of a context/source pair must fall inside the replay horizon
+`[0, cfg.t_end]`, so the recorded stream is exactly the stream the replay
+consumes — no event is written to `scenario.csv` that never reaches a buffer.
+Jitter counters are advanced before the horizon check, so filtering never
+shifts the timing of the events that are kept.
 """
 function build_stream(cfg)
     events = ReplayEvent[]
@@ -132,6 +138,7 @@ function build_stream(cfg)
             burst_index += 1
             t = phase_start + cfg.burst_start + Float32(burst) * cfg.burst_spacing +
                 _jitter(burst_index, cfg.jitter)
+            (0.0f0 <= t && t + cfg.pattern_lag <= cfg.t_end) || continue
             push!(events, ReplayEvent(t, dominant, cfg.pattern_value, :context, :pattern))
             push!(events, ReplayEvent(t + cfg.pattern_lag, dominant, cfg.pattern_value,
                                       :source, :pattern))
@@ -141,7 +148,7 @@ function build_stream(cfg)
     n_ticks = floor(Int, cfg.t_end / cfg.background_period)
     for tick in 0:(n_ticks - 1)
         t = Float32(tick) * cfg.background_period + _jitter(1_000 + tick, cfg.jitter)
-        (0.0f0 <= t <= cfg.t_end) || continue
+        (0.0f0 <= t && t + cfg.background_lag <= cfg.t_end) || continue
         neuron = 1 + mod(tick, cfg.n_neurons)
         if neuron == dominant_neuron(cfg, t)
             neuron = 1 + mod(neuron, cfg.n_neurons)
