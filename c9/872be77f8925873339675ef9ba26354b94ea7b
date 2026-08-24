@@ -1,0 +1,25 @@
+experiments/results/temporal_lens/summary.md
+  s_0c26100e940a5c::t_0646006bf49fae 15-19,26-29
+experiments/temporal_lens.jl
+  s_0c26100e940a5c::t_71de62a3aa82d3 236-245
+  s_0c26100e940a5c::t_a9813b132eb467 412-414,416,422-423,433-436,446,448-450
+  s_0c26100e940a5c::t_73959e120cbe4b 54,59,62,66,69,76,79,83,92,94,96,99,105,110,119,124,134,151,196,203,213,229,233,246,251,254,260,300,322,326,378,382,419-421,439,509-512,514-518,528-529,531,544-546,549,580-581
+experiments/src/ExperimentUtils.jl
+  s_0c26100e940a5c::t_4444bd8a3ad6bb 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c9872be77f8925873339675ef9ba26354b94ea7b",
+  "prompts": {},
+  "sessions": {
+    "s_0c26100e940a5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "491ce194-6eb8-4a07-8e74-cb51fef4e2b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
