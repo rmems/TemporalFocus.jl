@@ -55,9 +55,21 @@ steps do not re-litigate them.
    That URL still points at the **former `Limen-Neural` org**. Because it is a frozen
    `rev` pin, Limen-Capital does not break when the source repo is archived — but the
    pin will need one edit (UUID + URL) as part of `rmems/Limen-Capital#9`.
-4. **Limen-Capital uses the NeuroPulse *legacy alias* API.** `brain/sonar_probe.jl` and
-   `brain/synapse_conductor.jl` call `update_relevance`, not `update_routing!`. The
-   legacy aliases cannot be dropped in the consolidating release.
+4. **That consumer's dependency is declared but optional, and its routing code is a
+   vendored fork.** `brain/adapters.jl` loads the package opportunistically
+   (`@eval using TemporalFocus` inside a `try`, behind a `HAS_TEMPORAL_FOCUS` flag) and
+   uses no symbol from it. The routing that actually runs is a **local copy** in
+   `brain/synapse_conductor.jl`, which defines `NeroOrchestrator`, `update_relevance!`,
+   `nero_diagnostics`, and the `NERO_*` constants itself; `brain/sonar_probe.jl` calls
+   those local definitions, not the package's.
+
+   Two consequences. First, **no package-level consumer of the legacy alias API has been
+   found** — the aliases are retained because the vendored fork uses exactly those names
+   and de-vendoring onto the consolidated package is the intended path, not because a
+   live import would break. Second, the vendored copy is an older, 4-lobe `NERO`-named
+   variant that has **drifted from NeuroPulse's generalized `ActivityRegion` API**;
+   reconciling it is a cross-repo follow-up under `rmems/Limen-Capital#9`, and is an
+   additional argument for consolidating rather than maintaining the split.
 5. **`SpikeStream.jl`'s GitHub repository description is stale.** It advertises "Hurst
    exponent, Hawkes intensity, GBM surprise Z-score", all of which were removed in
    LIM-47 and now live in `rmems/kinetic-signals` (Rust). The shipped API is
@@ -153,6 +165,7 @@ load-bearing for future boundary enforcement and must be stated in the module do
 | Reference | Location | Disposition |
 |---|---|---|
 | `TemporalFocus` UUID + `Limen-Neural/NeuroPulse.jl` source pin | `rmems/Limen-Capital` `brain/Project.toml`, `docs/deps.md`, `README.md` | **Cross-repo follow-up** under `rmems/Limen-Capital#9`. Not changed by this workstream. |
+| Vendored fork of the routing kernel (`NeroOrchestrator`, `update_relevance!`, `NERO_*`) | `rmems/Limen-Capital` `brain/synapse_conductor.jl`, consumed by `brain/sonar_probe.jl` | **Cross-repo follow-up** under `rmems/Limen-Capital#9`: de-vendor onto the consolidated package. Drifted from the generalized `ActivityRegion` API; keeping the deprecated aliases makes that a rename-free change. |
 | SpikeStream boundary contract | `rmems/kinetic-signals` `AGENTS.md`, `README.md`, `REVIEW.md`, `docs/boundary-matrix.md` | Cross-repo follow-up: repoint "SpikeStream.jl" to "TemporalFocus.jl (spike features)". The no-FFI, fixture-only integration contract is unchanged. |
 | `spikestream-jl-*` dataset cards, manifests, JSONL | `rmems/operation-prometheus` | **Leave as-is.** These are historical trajectory datasets keyed to the source repos. Archiving (not deleting) keeps their URLs resolvable. |
 | `limen-neural.md`, `spikestream-jl.md` source-repo docs | `rmems/operation-prometheus/docs/source-repos/` | Leave as-is (provenance). |
@@ -189,7 +202,7 @@ release is additive for existing TemporalFocus consumers.
 | `adapt_leak!` | **Does not migrate — rehome** | See [Out of scope](#what-does-not-migrate). |
 | `default_inhibition_matrix` | **Migrate** | Including the `n ≤ 4` historical-slice rule and the `0.08/|i-j|` decay rule for `n > 4`. |
 | `LobeState`, `NeroOrchestrator` | **Migrate, deprecated aliases** | Used downstream. |
-| `update_relevance!`, `nero_diagnostics` | **Migrate, deprecated aliases** | **Confirmed in use** by `rmems/Limen-Capital` `brain/sonar_probe.jl` and `brain/synapse_conductor.jl`. |
+| `update_relevance!`, `nero_diagnostics` | **Migrate, deprecated aliases** | No package-level consumer found, but `rmems/Limen-Capital`'s **vendored fork** (`brain/synapse_conductor.jl`) uses these exact names. Keeping them is what makes de-vendoring onto this package a rename-free change. |
 | `ALPHA`, `BETA`, `GAMMA`, `EMA_DECAY`, `MIN_SCORE`, `EPSILON` | **Migrate, renamed** | Unexported but far too generic for a package that also owns attention. Namespace as `ROUTING_ALPHA`, … or expose only through `RoutingConfig()` defaults. |
 | `NERO_ALPHA`, `NERO_BETA`, `NERO_GAMMA`, `NERO_EMA_DECAY`, `NERO_MIN_SCORE`, `NERO_EPSILON` | **Migrate, deprecated aliases** | |
 | `DEFAULT_REGION_NAMES`, `NERO_DEFAULT_LOBE_NAMES` | **Migrate** | Latter deprecated. |
@@ -450,7 +463,7 @@ before the code exists.
 | Consumer | Today | After v0.2.0 | Break? |
 |---|---|---|---|
 | **TemporalFocus v0.1.0 consumers** | `TemporalFocus` @ `7f3c9f2a-…`, attention API | Same name, same UUID, same API, plus features + routing | **No.** Purely additive. |
-| **NeuroPulse consumers** (`rmems/Limen-Capital`) | `TemporalFocus` @ `b7e4c3f2-…`, `[sources]` → `Limen-Neural/NeuroPulse.jl` @ `40e39206…` | `TemporalFocus` @ `7f3c9f2a-…`, `[sources]` → `rmems/TemporalFocus.jl`; `update_relevance!` etc. keep working with a deprecation warning | **Yes, two:** UUID + source URL must change; **`adapt_leak!` is removed** and must be re-sourced from wherever it is rehomed. The existing `rev` pin keeps working until they choose to move. |
+| **NeuroPulse consumers** (`rmems/Limen-Capital`) | `TemporalFocus` @ `b7e4c3f2-…`, `[sources]` → `Limen-Neural/NeuroPulse.jl` @ `40e39206…`; loaded optionally, routing actually vendored | `TemporalFocus` @ `7f3c9f2a-…`, `[sources]` → `rmems/TemporalFocus.jl`; `update_relevance!` etc. keep working with a deprecation warning | **Yes, two:** UUID + source URL must change; **`adapt_leak!` is removed** and must be re-sourced from wherever it is rehomed. Low urgency in practice — the `rev` pin is frozen and the load is behind a `try`, so nothing breaks until they choose to de-vendor. |
 | **SpikeStream consumers** | `SpikeStream` @ `a3c7f1e2-…`, tag `v0.1.0` | `using TemporalFocus`; function names, signatures, and `Float64` return types unchanged | **Yes, one:** package name + UUID. No API change. |
 | **`rmems/kinetic-signals`** (Rust) | Fixture-parity contract with `SpikeStream.jl`, no FFI | Same fixtures, now under `TemporalFocus.jl` | Docs-only. Output ranges are unchanged and remain a contract. |
 
