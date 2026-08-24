@@ -239,6 +239,20 @@ wrapper functions and accept the frame; a silent alias that disappears in a late
 release is worse. If the wrapper is rejected on performance grounds, the deprecation
 must be documentation-only and stated as such in the migration guide.
 
+**The wrapper treatment applies to function aliases only.** The deprecated set is not
+homogeneous, and turning all of it into functions would break the compatibility promise
+it exists to keep:
+
+| Alias kind | Members | Treatment |
+|---|---|---|
+| Function aliases | `update_relevance!`, `nero_diagnostics`, `load_state` | Wrapper function + `depwarn`. |
+| **Type** aliases | `LobeState`, `NeroOrchestrator` | **Stay type aliases.** A wrapper function would break `x::LobeState`, `isa(x, LobeState)`, and dispatch. Deprecation is documentation-only. |
+| **Constant** aliases | `NERO_ALPHA`, `NERO_BETA`, `NERO_GAMMA`, `NERO_EMA_DECAY`, `NERO_MIN_SCORE`, `NERO_EPSILON`, `NERO_INHIBIT`, `NERO_DEFAULT_LOBE_NAMES` | **Stay constants.** A wrapper function would break arithmetic (`NERO_ALPHA * x`) and indexing. Deprecation is documentation-only. |
+
+Julia has no general mechanism for warning on the *use* of a deprecated type or constant
+binding without changing what that binding is, so for those two rows the honest answer is
+a documented deprecation, not a silent pretence that a warning will fire.
+
 ### `rmems/SpikeStream.jl`
 
 | Symbol | Disposition | Notes |
@@ -369,11 +383,21 @@ spike amplitude. Rather than discard `value` quietly, adapters take an explicit
 `value != 1.0f0`. Uniform-amplitude trains adapt without ceremony; weighted trains force
 the caller to acknowledge what is being dropped.
 
-**`detect_bursts` index provenance.** `detect_bursts` returns ranges into the *sorted*
-timestamp sequence. After adapting from a `SpikeTrain` those indices no longer address
-`train.events`. Adapters must either return the sorting permutation alongside the
-result, or return burst *time intervals* rather than indices. Decide before porting;
-do not leave it to the caller to discover.
+**`detect_bursts` index provenance — decided: adapters return time intervals.** The
+migrated `detect_bursts` returns ranges into the *sorted* timestamp sequence, so after adapting
+from a `SpikeTrain` those indices no longer address `train.events`. Leaving the choice
+open would let two conforming implementations produce incompatible public APIs, so it is
+settled here:
+
+- **The migrated `detect_bursts(times; …)` keeps its `Vector{UnitRange{Int}}` return
+  unchanged**, for parity with SpikeStream v0.1.0 and the frozen fixtures.
+- **Adapter-level burst results are time intervals**, `Vector{Tuple{Float64,Float64}}`
+  of `(t_first, t_last)`. Indices into a sorted internal copy are meaningless to a caller
+  holding a `SpikeTrain`; times are meaningful in the caller's own frame and survive
+  re-sorting, filtering, and per-neuron grouping.
+
+This is an explicit gate on step 4: the adapter PR implements the interval form, not the
+permutation form.
 
 ---
 
@@ -396,7 +420,9 @@ it**, by scoping the rule instead of weakening it:
 > are computed and returned in `Float64`.
 
 Nothing that was `Float32` becomes `Float64`; the rule's existing surface is untouched.
-`AGENTS.md` is amended to this wording at step 7, together with the code — not before.
+`AGENTS.md` is amended to this wording **in step 3, the same PR that lands the first
+`Float64` kernel** — not at step 7. Deferring it would leave `main` shipping derived
+`Float64` quantities against a still-active `Float32` rule for several PRs.
 
 ### Policy
 
@@ -428,7 +454,13 @@ stored in a `SpikeEvent`. Downstream that is not a rounding nuisance, it changes
 |---|---|---|
 | `:collisions` *(default)* | narrowing that **merges timestamps that were distinct**, or that exceeds `abs(t) > 2^24` | normal ingest |
 | `:strict` | **any** timestamp that does not round-trip `Float64 → Float32 → Float64` | exact parity with a `Float64` pipeline is required |
-| `:none` | nothing | the caller has accepted lossy ingest |
+| `:none` | non-finite values only (see below) | the caller has accepted lossy ingest |
+
+**Non-finite timestamps are rejected in every checked mode.** A `NaN` neither merges two
+distinct timestamps nor exceeds `2^24`, so the collision and magnitude rules alone would
+wave it through — and it then poisons every ISI statistic downstream. `:collisions` and
+`:strict` therefore also reject any non-finite `t`, and even `:none` rejects it: accepting
+lossy ingest is not the same as accepting a value that is not a time.
 
 The default deliberately does **not** promise that ingest is lossless. Ordinary decimal
 values — `0.1`, `0.2` — are altered by narrowing without merging or exceeding `2^24`, so
@@ -512,9 +544,9 @@ scope tests), not the first time the boundary text moves.
 | 3 | Port SpikeStream feature kernels + `test/fixtures/spike_vectors.json`, `Statistics` inlined; **add spike-stream feature extraction to the Scope lists in the same PR** | Frozen fixtures pass unmodified; `[deps]` still empty; boundary text matches what `main` now ships |
 | 4 | Add `SpikeTrain` ↔ timestamp adapters + the full edge-case suite from [Precision policy](#precision-policy) | Narrowing-collision test fails loudly without the guard, passes with it |
 | 5 | Port `ActivityRegion` + routing kernel, `Printf` dropped, `LinearAlgebra` dropped, constants renamed, `adapt_leak!` **excluded**; **add the routing kernel to the Scope lists in the same PR**, with the admissible-mutation limits | NeuroPulse's 899-line suite ports and passes (minus `adapt_leak!` tests); boundary text matches what `main` now ships; **and both** `adapt_leak!`'s destination **and** the `spike_density` field-name question are decided — see the gates below |
-| 6 | Port deprecated aliases as wrapper functions with `depwarn` | `update_relevance!` etc. resolve and warn |
+| 6 | Port deprecated aliases, **preserving each binding's kind** — see below | `update_relevance!` etc. resolve and warn; `LobeState` still usable in `::`/`isa`; `NERO_ALPHA` still arithmetic |
 | 7 | Consolidated docs pass: README one-sentence lead, `REVIEW.md` checklist, the scoped `Float32` rule, `docs/src/`, and scope tests asserting the exported symbol set | Stated boundary matches shipped code exactly |
-| 8 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); bump to `0.2.0` and update `CHANGELOG.md` | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix |
+| 8 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); bump to `0.2.0`, update `CHANGELOG.md`, **and update `RELEASING.md`** (its "First registration (v0.1.0)" procedure still pins `Project.toml` to `0.1.0`, and its UUID-hygiene blocker is discharged by step 2) | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix |
 | 9 | Add redirect READMEs to `NeuroPulse.jl` and `SpikeStream.jl` | *Cross-repo; requires write access to those repos* |
 | 10 | Migrate/triage open issues (NeuroPulse #40, #14; SpikeStream #27) and open PRs (NeuroPulse #41, SpikeStream #26) per rmems/.github#4 | Every open item has a documented destination |
 | 11 | **Archive** `NeuroPulse.jl` and `SpikeStream.jl` | Steps 8–10 complete **and** the v0.2.0 upgrade path is published |
@@ -614,9 +646,13 @@ No repository is archived before its supported upgrade path is published.
 3. **`Printf` vs. zero-dep diagnostics.** Accept a changed `routing_diagnostics` output
    format to keep `[deps]` empty, or add `Printf` and keep byte-identical output?
 4. **Rename `RegionRouter.spike_density` → `region_spike_rate`?** It is a breaking
-   read-access change for any consumer inspecting router state.
-5. **Deprecated aliases as wrapper functions** (real `depwarn`, one extra frame) or
-   documentation-only deprecation (zero cost, silent)?
+   read-access change for any consumer inspecting router state. This blocks step 5 under
+   the [field-name gate](#gate-the-spike_density-field-name-must-be-settled-before-the-router-lands);
+   the fallback is to port the existing name.
+5. **The three *function* aliases as wrapper functions** (real `depwarn`, one extra
+   frame) or documentation-only deprecation (zero cost, silent)? The type and constant
+   aliases are already settled — they keep their binding kind and are documented, not
+   wrapped.
 6. **Confirm** that Limen-Capital's dependency migration is owned by
    `rmems/Limen-Capital#9` and is not blocking on this repository.
 
