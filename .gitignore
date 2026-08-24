@@ -1,5 +1,6 @@
 # Julia package artifacts
 /Manifest.toml
+/experiments/Manifest.toml
 /LocalPreferences.toml
 *.jl.cov
 *.jl.*.cov
