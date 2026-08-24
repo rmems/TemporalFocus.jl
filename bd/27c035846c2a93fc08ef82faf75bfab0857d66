@@ -1,0 +1,24 @@
+experiments/results/attention_spotlight/scenario.csv
+  s_0c26100e940a5c::t_1aabd44c48d67e 2-119
+experiments/attention_spotlight.jl
+  s_0c26100e940a5c::t_0de03e97614355 656
+  s_0c26100e940a5c::t_56cf2b096daf88 354-357,364-365
+  s_0c26100e940a5c::t_4b70bceffc5450 484,487-488
+  s_0c26100e940a5c::t_defe7f35f60067 515-521
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bd27c035846c2a93fc08ef82faf75bfab0857d66",
+  "prompts": {},
+  "sessions": {
+    "s_0c26100e940a5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "491ce194-6eb8-4a07-8e74-cb51fef4e2b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
