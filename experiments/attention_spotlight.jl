@@ -145,8 +145,11 @@ function build_stream(cfg)
         end
     end
 
+    # Tick through the horizon inclusively; the pair-level check below decides
+    # which of the last ticks actually fit, so a background pair that ends
+    # inside `t_end` is never dropped just because the period does not divide it.
     n_ticks = floor(Int, cfg.t_end / cfg.background_period)
-    for tick in 0:(n_ticks - 1)
+    for tick in 0:n_ticks
         t = Float32(tick) * cfg.background_period + _jitter(1_000 + tick, cfg.jitter)
         (0.0f0 <= t && t + cfg.background_lag <= cfg.t_end) || continue
         neuron = 1 + mod(tick, cfg.n_neurons)
@@ -205,6 +208,29 @@ function identity_readout(n::Integer)
 end
 
 """
+    sample_times(cfg) -> Vector{Float32}
+
+Timestamps the replay is sampled at: every `sample_dt` grid point inside the
+horizon, plus `t_end` itself.
+
+No sample lies beyond `cfg.t_end`, the last sample is exactly `cfg.t_end` (so
+every recorded event is consumed), and no interior grid point is skipped when
+`t_end` is not an exact multiple of `sample_dt`.
+"""
+function sample_times(cfg)
+    # The small slack absorbs Float32 division error for horizons that *are*
+    # exact multiples of the step (4.8f0 / 0.02f0 is not exactly 240).
+    n_grid = floor(Int, cfg.t_end / cfg.sample_dt + 1.0f-4)
+    times = Float32[min(Float32(step) * cfg.sample_dt, cfg.t_end) for step in 0:max(n_grid, 1)]
+    if cfg.t_end - last(times) > 1.0f-5
+        push!(times, cfg.t_end)
+    else
+        times[end] = cfg.t_end
+    end
+    return times
+end
+
+"""
     replay(cfg, events) -> Vector{ReplayStep}
 
 Drive the buffers through the scenario. At every timestamp: ingest the events
@@ -217,15 +243,10 @@ function replay(cfg, events)
     context_buffer = TemporalBuffer(cfg.buffer_window)
 
     steps = ReplayStep[]
-    n_steps = max(1, round(Int, cfg.t_end / cfg.sample_dt))
     next_event = 1
 
-    for step in 0:n_steps
-        # Sample on the `sample_dt` grid, but never past the declared horizon,
-        # and finish exactly at `t_end`. That keeps the two guarantees intact
-        # when `t_end` is not an exact multiple of `sample_dt`: every recorded
-        # event is consumed, and nothing is recorded after the horizon.
-        t = step == n_steps ? cfg.t_end : min(Float32(step) * cfg.sample_dt, cfg.t_end)
+    for (index, t) in pairs(sample_times(cfg))
+        step = index - 1
 
         # 1. Causal ingest: nothing from the future ever enters a buffer.
         ingested_source = 0
@@ -609,10 +630,12 @@ end
 """
     config_float(x) -> Float64
 
-`Float32` parameter widened for TOML output without the binary-representation
-noise of a bare `Float64` conversion.
+`Float32` parameter widened for TOML output. Going through the shortest
+round-tripping `Float32` string keeps the recorded value both readable (`0.35`,
+not `0.3499999940395355`) and exact: `Float32` of what lands in `config.toml`
+is the parameter the run used.
 """
-config_float(x::Real) = round(Float64(x); digits = 6)
+config_float(x::Real) = parse(Float64, string(Float32(x)))
 
 # ---------------------------------------------------------------------------
 # Entry point
