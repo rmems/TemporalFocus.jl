@@ -43,9 +43,14 @@ machine-readable evidence.
    commit field (`commit`, `git_commit`, `revision`, …) in `config.toml`, alongside
    `generated_at`, `julia_version` and any RNG seeds. When no commit field is
    recorded, the gallery falls back to the commit that last changed the result
-   directory and says so; when neither is available it publishes a warning instead
-   of an unverifiable claim.
-6. **Published results are committed.** To appear in the hosted docs, a result
+   directory and says so; when neither is available — uncommitted artifacts, or a
+   shallow clone whose history cannot answer the question — it publishes a warning
+   instead of an unverifiable claim.
+6. **Evidence links are pinned to a revision.** Each result's links resolve at its
+   own commit, so a versioned copy of this page keeps pointing at the evidence it
+   was rendered from even after `main` moves on. Only results with no identifiable
+   code version fall back to `main`.
+7. **Published results are committed.** To appear in the hosted docs, a result
    directory must be committed to the repository. Keep figures small (≈500 KB or
    less); large or intermediate data stays out of git.
 

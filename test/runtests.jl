@@ -625,7 +625,7 @@ using Random
             dir = joinpath(results, slug)
             mkpath(dir)
             write(joinpath(dir, "config.toml"),
-                "commit = \"abc123\"\nseed = 7\n\n[grid]\nn = 5\n")
+                "commit = \"abc1234def\"\nseed = 7\n\n[grid]\nn = 5\n")
             write(joinpath(dir, "metrics.csv"),
                 "dt,tau,weight\n0.0,1.0,1.0\n1.0,1.0,0.3679\n")
             write(joinpath(dir, "summary.md"),
@@ -649,7 +649,7 @@ using Random
             @test occursin("Max error 1.0e-8.", page)
             @test occursin("No bias observed.", page)
             # Provenance names the code version the run came from.
-            @test occursin("abc123", page)
+            @test occursin("abc1234def", page)
             @test !occursin("Provenance incomplete", page)
         end
 
@@ -703,6 +703,67 @@ using Random
             @test occursin("Smoke artifact.", page)
         end
 
+        @testset "evidence links pin to the recorded revision" begin
+            results = joinpath(mktempdir(), "results")
+            slug = first(Gal.ENTRIES).slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            sha = "0123456789abcdef0123456789abcdef01234567"
+            write(joinpath(dir, "config.toml"), "commit = \"$(sha)\"\n")
+            write(joinpath(dir, "metrics.csv"), "a\n1\n")
+
+            _, page, _ = _build(results)
+
+            # Links resolve at the result's own commit, not at a moving `main`.
+            @test occursin("/blob/$(sha)/", page)
+            @test !occursin("/blob/main/", page)
+            @test !occursin("Provenance incomplete", page)
+        end
+
+        @testset "unusable commit values are not published as provenance" begin
+            results = joinpath(mktempdir(), "results")
+            slug = first(Gal.ENTRIES).slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(dir, "config.toml"), "commit = \"unknown\"\n")
+
+            _, page, _ = _build(results)
+
+            @test occursin("Provenance incomplete", page)
+            @test occursin("/blob/main/", page)
+        end
+
+        @testset "unreadable config is not reported as missing" begin
+            results = joinpath(mktempdir(), "results")
+            slug = first(Gal.ENTRIES).slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(dir, "config.toml"), "this is = = not toml\n")
+            write(joinpath(dir, "metrics.csv"), "a\n1\n")
+
+            _, page, _ = _build(results)
+
+            @test occursin("Unreadable configuration", page)
+            @test !occursin("No `config.toml` was recorded", page)
+            # The broken file is still linked as evidence.
+            @test occursin("config.toml", page)
+        end
+
+        @testset "csv records may span lines" begin
+            results = joinpath(mktempdir(), "results")
+            slug = first(Gal.ENTRIES).slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(dir, "metrics.csv"),
+                "kernel,note\ndiscrete,\"first line\nsecond line\"\ntemporal,plain\n")
+
+            _, page, _ = _build(results)
+
+            # A quoted newline is one record, not two.
+            @test occursin("2 recorded rows over 2 columns", page)
+            @test occursin("first line second line", page)
+        end
+
         @testset "summary embedding is safe" begin
             md = "# Title\n\n```julia\n# not a heading\n```\n\n```@example\n1 + 1\n```\n\n## Sub\n"
             shifted = Gal.shift_headings(md, 4)
@@ -713,6 +774,12 @@ using Random
             # Documenter directives in generated summaries must not execute.
             @test !occursin("```@example", shifted)
             @test occursin("```text", shifted)
+
+            # …including directives nested in a block quote or list item, which
+            # still open a fenced block in Markdown.
+            nested = Gal.shift_headings("> ```@docs\n> x\n> ```\n\n- ```@example\n", 4)
+            @test !occursin("@docs", nested)
+            @test !occursin("@example", nested)
         end
 
         @testset "csv parsing" begin
