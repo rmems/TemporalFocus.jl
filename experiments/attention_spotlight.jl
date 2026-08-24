@@ -250,10 +250,14 @@ function replay(cfg, events)
         top1_attention = 0.0f0
         top1_share = 0.0f0
         top1_margin = 0.0f0
-        peak = argmax(attention)
-        if attention[peak] > 0.0f0
+        # `attention` always holds exactly `cfg.n_neurons` (≥ 1) entries, so
+        # `findmax` is total here. Before any spike is in range the vector is
+        # all zeros; that is reported as "no focus" (`top1_neuron == 0`) rather
+        # than as an arbitrary winner.
+        peak_attention, peak = findmax(attention)
+        if peak_attention > 0.0f0
             top1_neuron = peak
-            top1_attention = attention[peak]
+            top1_attention = peak_attention
             top1_share = shares[peak]
             runner_up = 0.0f0
             for (i, share) in pairs(shares)
