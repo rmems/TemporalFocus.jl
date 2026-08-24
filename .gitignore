@@ -10,6 +10,10 @@
 /coverage/
 /benchmarks/results/
 
+# Experiment figures mirrored into the docs by docs/gallery.jl at build time.
+# The tracked source of truth is experiments/results/<slug>/figure.png.
+/docs/src/assets/experiments/
+
 # Editor and OS noise
 .DS_Store
 .vscode/

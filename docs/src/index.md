@@ -61,4 +61,6 @@ prune!(src_buf, 12.0f0)
 
 ## Documentation
 
+- [Experiment Gallery](experiments.md) — reproducible characterization of the
+  attention kernels, generated from committed experiment artifacts
 - [API reference](api.md) — all public exports

@@ -580,4 +580,130 @@ using Random
         end
     end
 
+    # The Experiment Gallery page is generated from experiment artifacts by
+    # docs/gallery.jl. It must render correctly from whatever results exist —
+    # including none — so the docs build never depends on an experiment having run.
+    @testset "Experiment Gallery generator" begin
+        include(joinpath(@__DIR__, "..", "docs", "gallery.jl"))
+        Gal = Main.Gallery
+
+        function _build(results_dir)
+            tmp = mktempdir()
+            out = joinpath(tmp, "experiments.md")
+            assets = joinpath(tmp, "assets")
+            res = Gal.build_gallery(;
+                repo_root = tmp,
+                results_dir = results_dir,
+                out_path = out,
+                assets_dir = assets,
+            )
+            return res, read(out, String), assets
+        end
+
+        @testset "no results at all" begin
+            res, page, assets = _build(joinpath(mktempdir(), "absent"))
+
+            @test isempty(res.published)
+            @test length(res.pending) == length(Gal.ENTRIES)
+            @test isempty(res.copied)
+            @test !isdir(assets)
+
+            @test startswith(page, "# Experiment Gallery")
+            @test occursin("No results published yet", page)
+            # Every expected experiment is still introduced, with no results claimed.
+            for entry in Gal.ENTRIES
+                @test occursin(entry.title, page)
+                @test occursin("experiments/$(entry.slug).jl", page)
+            end
+            # Nothing is illustrated, because nothing has been generated.
+            @test !occursin("![", page)
+        end
+
+        @testset "published experiment renders generated evidence" begin
+            results = joinpath(mktempdir(), "results")
+            slug = first(Gal.ENTRIES).slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(dir, "config.toml"),
+                "commit = \"abc123\"\nseed = 7\n\n[grid]\nn = 5\n")
+            write(joinpath(dir, "metrics.csv"),
+                "dt,tau,weight\n0.0,1.0,1.0\n1.0,1.0,0.3679\n")
+            write(joinpath(dir, "summary.md"),
+                "# Result\n\nMax error 1.0e-8.\n\n## Null finding\n\nNo bias observed.\n")
+            write(joinpath(dir, "figure.png"), "png-bytes")
+
+            res, page, assets = _build(results)
+
+            @test res.published == [slug]
+            @test !(slug in res.pending)
+            @test isfile(joinpath(assets, slug, "figure.png"))
+            @test occursin("![", page)
+            @test occursin("assets/experiments/$(slug)/figure.png", page)
+            # Setup comes from config.toml, including nested tables.
+            @test occursin("`grid.n`", page)
+            @test occursin("`seed`", page)
+            # Metrics come from metrics.csv.
+            @test occursin("2 recorded rows over 3 columns", page)
+            @test occursin("0.3679", page)
+            # The generated summary is embedded verbatim, null finding included.
+            @test occursin("Max error 1.0e-8.", page)
+            @test occursin("No bias observed.", page)
+            # Provenance names the code version the run came from.
+            @test occursin("abc123", page)
+            @test !occursin("Provenance incomplete", page)
+        end
+
+        @testset "partial artifacts degrade honestly" begin
+            results = joinpath(mktempdir(), "results")
+            slug = Gal.ENTRIES[2].slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(dir, "metrics.csv"), "kernel,mass\ndiscrete,1.0\n")
+            # A created-but-empty directory must not count as a published result.
+            mkpath(joinpath(results, Gal.ENTRIES[3].slug))
+
+            res, page, _ = _build(results)
+
+            @test res.published == [slug]
+            @test Gal.ENTRIES[3].slug in res.pending
+            @test occursin("No `config.toml` was recorded", page)
+            @test occursin("No `figure.png` was emitted", page)
+            @test occursin("No `summary.md` was emitted", page)
+            @test occursin("Provenance incomplete", page)
+            @test occursin("| Figure | *not emitted* |", page)
+        end
+
+        @testset "unlisted slugs are still published" begin
+            results = joinpath(mktempdir(), "results")
+            dir = joinpath(results, "harness_smoke")
+            mkpath(dir)
+            write(joinpath(dir, "summary.md"), "Smoke artifact.\n")
+
+            res, page, _ = _build(results)
+
+            @test res.published == ["harness_smoke"]
+            @test occursin("Additional published results", page)
+            @test occursin("Smoke artifact.", page)
+        end
+
+        @testset "summary embedding is safe" begin
+            md = "# Title\n\n```julia\n# not a heading\n```\n\n```@example\n1 + 1\n```\n\n## Sub\n"
+            shifted = Gal.shift_headings(md, 4)
+            @test occursin("##### Title", shifted)
+            @test occursin("###### Sub", shifted)
+            # Comments inside fenced code are not treated as headings.
+            @test occursin("# not a heading", shifted)
+            # Documenter directives in generated summaries must not execute.
+            @test !occursin("```@example", shifted)
+            @test occursin("```text", shifted)
+        end
+
+        @testset "csv parsing" begin
+            @test Gal.split_csv_line("a,b,c") == ["a", "b", "c"]
+            @test Gal.split_csv_line("a,\"b,c\",d") == ["a", "b,c", "d"]
+            @test Gal.split_csv_line("a,\"say \"\"hi\"\"\",c") == ["a", "say \"hi\"", "c"]
+            @test Gal.cell("a|b\nc") == "a\\|b c"
+        end
+    end
+
 end
