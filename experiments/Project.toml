@@ -1,0 +1,10 @@
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TemporalFocus = "7f3c9f2a-6b2e-4d91-9c4f-1a2b3c4d5e6f"
+
+[compat]
+CairoMakie = "0.12, 0.13, 0.14, 0.15"
+julia = "1.9"
