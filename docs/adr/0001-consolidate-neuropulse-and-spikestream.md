@@ -391,7 +391,9 @@ Nothing that was `Float32` becomes `Float64`; the rule's existing surface is unt
    Frozen fixtures continue to match bit-for-bit.
 2. **`SpikeTrain` → features is exact.** Widening the stored `Float32` `t` to `Float64`
    is lossless, so features computed from a `SpikeTrain` are reproducible.
-3. **The lossy direction is ingest**, and it must not be silent.
+3. **The lossy direction is ingest.** It cannot be made lossless — `Float32` storage is
+   the data model — but the failures that change results *qualitatively* must not be
+   silent. See the guard modes below for exactly what is and is not promised.
 
 ### The narrowing hazard, concretely
 
