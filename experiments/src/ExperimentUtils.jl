@@ -187,7 +187,9 @@ end
 
 write_config(slug::AbstractString, cfg::NamedTuple) = write_config(slug, Dict(pairs(cfg)))
 
-_format_float(x::AbstractFloat) = _format_float(Float32(x))
+# Float32 and Float64 hit the concrete method below and keep full precision;
+# any other float type (Float16, BigFloat, ...) is widened, never narrowed.
+_format_float(x::AbstractFloat) = _format_float(Float64(x))
 function _format_float(x::Union{Float32,Float64})
     isnan(x) && return "NaN"
     isinf(x) && return x > 0 ? "Inf" : "-Inf"

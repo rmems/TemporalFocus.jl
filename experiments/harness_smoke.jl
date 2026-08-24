@@ -68,23 +68,35 @@ function main()
     context = _make_train(rng)
     readout = rand(rng, Float32, N_NEURONS, N_OUT)
 
-    discrete_norm = _norm(spike_attention_discrete(source, context, readout))
-    discrete_norm > 0 || error("degenerate spike scene: discrete readout is all zeros")
+    discrete = spike_attention_discrete(source, context, readout)
+    discrete_norm = _norm(discrete)
+    peak = maximum(abs, discrete)
+    peak > 0 || error("degenerate spike scene: discrete readout is all zeros")
 
-    rows = map(TAUS) do τ
-        temporal_norm = _norm(spike_attention_temporal(source, context, readout; τ = τ))
+    # Compare the full readout vectors, not just their norms: two different
+    # vectors can share a norm, so norm-only checks could claim convergence that
+    # did not happen. `slack` is a Float32 rounding allowance at this magnitude.
+    temporals = [spike_attention_temporal(source, context, readout; τ = τ) for τ in TAUS]
+    slack = 1.0f-5 * peak
+
+    rows = map(zip(TAUS, temporals)) do (τ, temporal)
+        deviation = temporal .- discrete
         return (
             tau = τ,
-            temporal_norm = temporal_norm,
+            temporal_norm = _norm(temporal),
             discrete_norm = discrete_norm,
-            ratio = temporal_norm / discrete_norm,
+            ratio = _norm(temporal) / discrete_norm,
+            max_abs_deviation = maximum(abs, deviation),
+            max_rel_deviation = maximum(abs, deviation) / peak,
         )
     end
 
     ratios = [row.ratio for row in rows]
-    monotonic = issorted(ratios)
-    bounded = all(<=(1 + eps(Float32)), ratios)
-    converged = last(ratios) >= 1 - CONVERGENCE_TOL
+    # Every readout component grows with τ, no component overshoots the discrete
+    # readout, and the last one matches it elementwise.
+    monotonic = all(i -> all(temporals[i + 1] .>= temporals[i] .- slack), 1:(length(temporals) - 1))
+    bounded = all(temporal -> maximum(temporal .- discrete) <= slack, temporals)
+    converged = last(rows).max_rel_deviation <= CONVERGENCE_TOL
     supported = monotonic && bounded && converged
 
     config_file = write_config(
@@ -103,7 +115,15 @@ function main()
     figure_file = _figure(Float64.(TAUS), Float64.(ratios), figure_path(SLUG))
 
     table = join(
-        (@sprintf("| %g | %.4f | %.4f |", row.tau, row.temporal_norm, row.ratio) for row in rows),
+        (
+            @sprintf(
+                "| %g | %.4f | %.4f | %.4f |",
+                row.tau,
+                row.temporal_norm,
+                row.ratio,
+                row.max_rel_deviation
+            ) for row in rows
+        ),
         "\n",
     )
     # Format Float32 constants explicitly: string interpolation of a Float32
@@ -114,6 +134,7 @@ function main()
     tau_max_s = @sprintf("%g", last(TAUS))
     ratio_min_s = @sprintf("%.1f%%", 100 * first(ratios))
     ratio_max_s = @sprintf("%.4f", last(ratios))
+    deviation_max_s = @sprintf("%.4f", last(rows).max_rel_deviation)
     summary_file = write_summary(
         SLUG,
         """
@@ -127,9 +148,10 @@ function main()
         ## Hypothesis
 
         Larger τ flattens the exponential recency weight `exp(-|Δt| / τ)` toward
-        1, so the temporal readout should grow monotonically with τ, stay at or
-        below the timing-agnostic `spike_attention_discrete` readout, and
-        converge to it (within $(tol_s)) at the largest τ.
+        1, so every component of the temporal readout should grow with τ, stay
+        at or below the timing-agnostic `spike_attention_discrete` readout, and
+        converge to it elementwise at the largest τ — within $(tol_s) of the
+        largest discrete readout component.
 
         ## Setup
 
@@ -140,13 +162,17 @@ function main()
 
         ## Result
 
-        | τ | ‖temporal readout‖ | ratio to discrete |
-        |---:|---:|---:|
+        | τ | ‖temporal readout‖ | ratio to discrete | max elementwise deviation |
+        |---:|---:|---:|---:|
         $(table)
 
-        - monotonically non-decreasing in τ: **$(monotonic)**
-        - never exceeds the discrete baseline: **$(bounded)**
-        - ratio at τ = $(tau_max_s): **$(ratio_max_s)** (converged: **$(converged)**)
+        Deviations are `max|temporal - discrete|` divided by the largest
+        discrete readout component.
+
+        - every component non-decreasing in τ: **$(monotonic)**
+        - no component exceeds the discrete baseline: **$(bounded)**
+        - at τ = $(tau_max_s): norm ratio **$(ratio_max_s)**, max elementwise
+          deviation **$(deviation_max_s)** (converged: **$(converged)**)
 
         At the shortest τ the readout keeps only near-coincident pairs
         ($(ratio_min_s) of the discrete magnitude); by τ = $(tau_max_s) the
@@ -170,9 +196,12 @@ function main()
     )
 
     println("harness smoke experiment (slug: ", SLUG, ")")
-    println("  monotonic in τ:      ", monotonic)
-    println("  bounded by discrete: ", bounded)
-    println("  converged at τ=", tau_max_s, ": ", converged, " (ratio ", ratio_max_s, ")")
+    println("  monotonic in τ (elementwise): ", monotonic)
+    println("  bounded by discrete:          ", bounded)
+    println(
+        "  converged at τ=", tau_max_s, ": ", converged,
+        " (norm ratio ", ratio_max_s, ", max elementwise deviation ", deviation_max_s, ")",
+    )
     println("  hypothesis supported: ", supported)
     for file in (config_file, metrics_file, figure_file, summary_file)
         println("  wrote ", file)
