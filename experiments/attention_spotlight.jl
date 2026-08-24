@@ -351,14 +351,18 @@ end
 
 Record the exact event stream that was replayed, so the run can be audited
 without re-deriving it from the config.
+
+Times and values are written with Julia's shortest round-tripping `Float32`
+representation (not a fixed number of decimals), so parsing a row back into
+`Float32` reproduces the replayed event bit-for-bit.
 """
 function write_scenario(dir::AbstractString, events)
     path = joinpath(dir, "scenario.csv")
     open(path, "w") do io
         println(io, "t,stream,neuron_id,value,role")
         for event in events
-            @printf(io, "%.6f,%s,%d,%.6f,%s\n",
-                    event.t, event.stream, event.neuron_id, event.value, event.role)
+            println(io, event.t, ",", event.stream, ",", event.neuron_id, ",",
+                    event.value, ",", event.role)
         end
     end
     return path
@@ -477,11 +481,11 @@ function build_figure(cfg, events, steps, moves)
 end
 
 """
-    render_animation(cfg, steps, path; stride=4, framerate=12) -> Union{String,Nothing}
+    render_animation(cfg, steps, path; stride=4, framerate=12) -> String
 
 Opt-in GIF: the spotlight heatmap with a moving time cursor plus a live bar
-chart of the current attention shares. Returns the path, or `nothing` if the
-animation backend is unavailable.
+chart of the current attention shares. Returns the written path; recording
+errors (missing FFMPEG backend, full disk, Makie failure) propagate.
 """
 function render_animation(cfg, steps, path; stride::Integer = 4, framerate::Integer = 12)
     times = Float32[s.t for s in steps]
@@ -508,15 +512,13 @@ function render_animation(cfg, steps, path; stride::Integer = 4, framerate::Inte
     colsize!(fig.layout, 2, Relative(0.3))
 
     frames = 1:stride:length(steps)
-    try
-        record(fig, path, frames; framerate = framerate) do i
-            cursor[] = times[i]
-            bars[] = collect(shares[i, :])
-            ax_bar.title = @sprintf("t = %.2f s", times[i])
-        end
-    catch err
-        @warn "animation backend unavailable; skipping GIF" exception = err
-        return nothing
+    # Recording failures are not swallowed: the animation is opt-in, so a
+    # missing FFMPEG backend, a full disk, or a Makie error should surface
+    # loudly instead of silently producing no GIF.
+    record(fig, path, frames; framerate = framerate) do i
+        cursor[] = times[i]
+        bars[] = collect(shares[i, :])
+        ax_bar.title = @sprintf("t = %.2f s", times[i])
     end
     return path
 end
@@ -651,8 +653,7 @@ function main(cfg = CONFIG)
     artifacts = [config_path, scenario_path, metrics_path, fig_path]
 
     if get(ENV, "SPOTLIGHT_ANIMATE", "0") == "1"
-        gif_path = render_animation(cfg, steps, figure_path(cfg.slug, "spotlight.gif"))
-        gif_path === nothing || push!(artifacts, gif_path)
+        push!(artifacts, render_animation(cfg, steps, figure_path(cfg.slug, "spotlight.gif")))
     end
 
     summary_path = write_summary(cfg.slug, summary_markdown(cfg, events, steps, segments,
