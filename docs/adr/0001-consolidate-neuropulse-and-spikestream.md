@@ -200,7 +200,7 @@ release is additive for existing TemporalFocus consumers.
 | `load_state!` | **Migrate** | |
 | `load_state` | **Migrate, deprecated** | Currently `const load_state = load_state!` — a non-bang name bound to a mutating function. Keep as a documented deprecated alias; steer callers to `load_state!`. |
 | `adapt_leak!` | **Does not migrate — rehome** | See [Out of scope](#what-does-not-migrate). |
-| `default_inhibition_matrix` | **Migrate** | Including the `n ≤ 4` historical-slice rule and the `0.08/|i-j|` decay rule for `n > 4`. |
+| `default_inhibition_matrix` | **Migrate** | Including the `n ≤ 4` historical-slice rule and the `0.08/\|i-j\|` decay rule for `n > 4`. |
 | `LobeState`, `NeroOrchestrator` | **Migrate, deprecated aliases** | Used downstream. |
 | `update_relevance!`, `nero_diagnostics` | **Migrate, deprecated aliases** | No package-level consumer found, but `rmems/Limen-Capital`'s **vendored fork** (`brain/synapse_conductor.jl`) uses these exact names. Keeping them is what makes de-vendoring onto this package a rename-free change. |
 | `ALPHA`, `BETA`, `GAMMA`, `EMA_DECAY`, `MIN_SCORE`, `EPSILON` | **Migrate, renamed** | Unexported but far too generic for a package that also owns attention. Namespace as `ROUTING_ALPHA`, … or expose only through `RoutingConfig()` defaults. |
@@ -295,17 +295,27 @@ it. Both cannot hold at registration time.
 
 ### Recommendation
 
-1. Keep `7f3c9f2a-6b2e-4d91-9c4f-1a2b3c4d5e6f` as the canonical identity **through the
-   consolidation**, so consolidation and identity churn are never in the same PR.
-2. Retire `b7e4c3f2-…` (NeuroPulse) and `a3c7f1e2-…` (SpikeStream). Neither is
-   registered; neither can be squatted.
-3. Perform the `RELEASING.md`-mandated `uuid4()` regeneration as a **single, separate,
-   pre-registration change**, after consolidation lands and before the first
-   `@JuliaRegistrator register`. That way exactly one identity change ever reaches a
-   consumer, and it is announced.
-4. Both identity events go in the migration guide's upgrade matrix.
+Regenerate **before** the consolidated release, not after it.
 
-This requires owner sign-off because it deviates from the literal wording of #53.
+1. Perform the `RELEASING.md`-mandated `uuid4()` regeneration **first**, as a single
+   dedicated change (step 2 of the [migration sequence](#migration-sequence)), before any
+   source is imported. `7f3c9f2a-…` is retired along with the other two.
+2. Retire `b7e4c3f2-…` (NeuroPulse) and `a3c7f1e2-…` (SpikeStream). None of the three is
+   registered; none can be squatted.
+3. Ship `v0.2.0` — the consolidated release — already carrying the final identity.
+
+**Why this ordering.** The obvious alternative is to hold `7f3c9f2a-…` through
+consolidation and regenerate later, just before registration. That is wrong: a consumer
+who adopts `v0.2.0` would then have to migrate a *second* time when the UUID is
+regenerated. Regenerating first means **every consumer sees exactly one identity change,
+ever** — and it costs nothing, because `TemporalFocus` `v0.1.0` was never tagged and
+never registered, so no consumer can be pinned to `7f3c9f2a-…` today (the audit found
+none).
+
+**This deviates from the literal wording of issue #53**, which says to retain
+TemporalFocus's UUID. It honors the intent — one canonical identity, chosen by
+downstream audit — while also clearing `RELEASING.md`'s registration blocker instead of
+deferring it. Owner sign-off required.
 
 ---
 
@@ -326,7 +336,17 @@ migration.
 | `spike_times_by_neuron(train::SpikeTrain) -> Dict{Int,Vector{Float64}}` | Groups by neuron; IDs are preserved as keys. |
 | `spike_features_by_neuron(train; …)` | Per-neuron feature extraction; returns results keyed by neuron ID. |
 | `SpikeTrain(times::AbstractVector{<:Real}; neuron_id, value=1.0f0)` | Reverse direction. `neuron_id` is a required keyword. |
-| Same set for `TemporalBuffer`, honoring `buffer.window` | |
+| Same set for `TemporalBuffer`, **plus a required `current_time`** | See below. |
+
+**`TemporalBuffer` needs a reference time.** A `TemporalBuffer` stores only `window` and
+`events`; it does **not** store the reference time that decides which events are currently
+inside the window — which is why the existing [`prune!`](../../src/types.jl) takes
+`current_time` explicitly. So a buffer adapter cannot "honor `buffer.window`" from the
+buffer alone: without a cutoff it would let stale events silently into feature
+calculations. Buffer adapters therefore take `current_time` as a required argument and
+apply the same `(current_time - event.t) <= buffer.window` rule `prune!` uses, so an
+adapted buffer and a pruned one agree exactly. (Requiring callers to `prune!` first was
+considered and rejected: it mutates the caller's buffer and fails silently if skipped.)
 
 **Handling `value`.** Every SpikeStream feature is count- and timing-based; none consume
 spike amplitude. Rather than discard `value` quietly, adapters take an explicit
@@ -346,6 +366,22 @@ do not leave it to the caller to discover.
 
 `TemporalFocus` is `Float32`-native. `SpikeStream` computes and returns `Float64`
 throughout (`sort(Float64.(spike_times))`).
+
+### The governing Float32 rule must be scoped, not ignored
+
+`AGENTS.md`'s code-style rule reads "Float32 for all spike values and temporal
+quantities". Taken literally that forbids the `Float64` feature API below, which would
+leave every later migration PR unable to implement this ADR while staying
+repository-compliant. **This ADR resolves that conflict explicitly rather than deferring
+it**, by scoping the rule instead of weakening it:
+
+> `Float32` governs the **spike data model and the kernels over it** — `SpikeEvent.t`,
+> spike `value`, attention weights, readout vectors, routing scores and summaries.
+> **Derived statistical features** (ISI moments, densities, normalized feature vectors)
+> are computed and returned in `Float64`.
+
+Nothing that was `Float32` becomes `Float64`; the rule's existing surface is untouched.
+`AGENTS.md` is amended to this wording at step 7, together with the code — not before.
 
 ### Policy
 
@@ -368,10 +404,23 @@ stored in a `SpikeEvent`. Downstream that is not a rounding nuisance, it changes
   counts **inflate**;
 - `normalized_feature_vector`'s `burst_norm` and `isi_cv_norm` components move with them.
 
-**Mitigation.** `SpikeTrain(times; …)` takes `check_precision::Bool = true` and throws
-when `Float32` narrowing merges timestamps that were distinct in the input, or when any
-`|t| > 2^24` (past the exactly-representable-integer range). Callers who genuinely want
-lossy ingest pass `check_precision = false`.
+**Mitigation, and the limit of what it promises.** `SpikeTrain(times; …)` takes
+`check_precision::Symbol = :collisions`:
+
+| Mode | Rejects | Use when |
+|---|---|---|
+| `:collisions` *(default)* | narrowing that **merges timestamps that were distinct**, changes their order, or exceeds `abs(t) > 2^24` | normal ingest |
+| `:strict` | **any** timestamp that does not round-trip `Float64 → Float32 → Float64` | exact parity with a `Float64` pipeline is required |
+| `:none` | nothing | the caller has accepted lossy ingest |
+
+The default deliberately does **not** promise that ingest is lossless. Ordinary decimal
+values — `0.1`, `0.2` — are altered by narrowing without merging or exceeding `2^24`, so
+`:collisions` accepts them and their ISIs shift in the last few digits. That is inherent
+to a `Float32` data model, not a bug the guard can remove: `:strict` would reject almost
+every real decimal timestamp. So the guarantee is scoped precisely — **the default
+prevents the failures that change results qualitatively** (zero ISIs, inflated burst
+counts, reordering), and `:strict` is available when bit-level parity matters. Sub-ulp
+rounding under `:collisions` is documented, not prevented.
 
 **Convenience.** Provide `Float32` wrappers (e.g. `normalized_feature_vector_f32`)
 rather than changing any existing return type.
@@ -384,8 +433,13 @@ Non-negotiable before the SpikeStream source is retired:
 - unsorted input; duplicated timestamps; negative timestamps
 - `NaN` / `Inf` timestamps
 - **large-magnitude timestamps that collide under `Float32` narrowing** (the hazard above)
+- a value that narrows lossily **without** colliding (e.g. `0.1`): accepted under
+  `:collisions`, rejected under `:strict` — pins down exactly what the default promises
+- order-changing narrowing, and `abs(t) > 2^24`
 - multi-neuron trains adapted per-neuron, asserting no cross-neuron ISI leakage
 - non-uniform `value` trains hitting the `ignore_values` guard
+- `TemporalBuffer` adapters: events outside `window` relative to `current_time` are
+  excluded, and the adapted result equals `prune!`-then-adapt exactly
 - `windowed_spike_features` right-edge inclusion at the `nextfloat` boundary
 - zero-duration and negative-duration windows
 - `detect_bursts` index provenance after adaptation
@@ -423,25 +477,44 @@ preserving; it is the reason the package installs anywhere with no resolution ri
 
 ## Migration sequence
 
-Each step is a separately reviewable PR. Steps 1–7 land before any repository is
-archived. Steps 8–10 are human/cross-repo actions outside this repository.
+Each step is a separately reviewable PR. Steps 1–8 land before any repository is
+archived. Steps 9–11 are human/cross-repo actions outside this repository.
 
 | # | Step | Gate before proceeding |
 |---|---|---|
 | 1 | **This ADR** — inventory, dispositions, boundary decision | Owner accepts the boundary broadening and the UUID recommendation |
-| 2 | Port SpikeStream feature kernels + `test/fixtures/spike_vectors.json`, `Statistics` inlined | Frozen fixtures pass unmodified; `[deps]` still empty |
-| 3 | Add `SpikeTrain` ↔ timestamp adapters + the full edge-case suite from [Precision policy](#precision-policy) | Narrowing-collision test fails loudly without the guard, passes with it |
-| 4 | Port `ActivityRegion` + routing kernel, `Printf` dropped, `LinearAlgebra` dropped, constants renamed, `adapt_leak!` **excluded** | NeuroPulse's 899-line suite ports and passes (minus `adapt_leak!` tests) |
-| 5 | Port deprecated aliases as wrapper functions with `depwarn` | `update_relevance!` etc. resolve and warn |
-| 6 | Update `README.md`, `AGENTS.md`, `REVIEW.md`, `docs/src/`, and add scope tests asserting the exported symbol set | Stated boundary matches shipped code exactly |
-| 7 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); bump to `0.2.0` and update `CHANGELOG.md` | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix |
-| 8 | Add redirect READMEs to `NeuroPulse.jl` and `SpikeStream.jl` | *Cross-repo; requires write access to those repos* |
-| 9 | Migrate/triage open issues (NeuroPulse #40, #14; SpikeStream #27) and open PRs (NeuroPulse #41, SpikeStream #26) per rmems/.github#4 | Every open item has a documented destination |
-| 10 | **Archive** `NeuroPulse.jl` and `SpikeStream.jl` | Steps 7–9 complete **and** the v0.2.0 upgrade path is published |
+| 2 | **Regenerate the canonical UUID** per `RELEASING.md` (`Project.toml`, `docs/Project.toml`, `benchmark/Project.toml`, and `Manifest.toml` via `Pkg.resolve()`) | Nothing depends on `7f3c9f2a-…`; done **before** any import so `v0.2.0` ships the final identity and no consumer migrates twice |
+| 3 | Port SpikeStream feature kernels + `test/fixtures/spike_vectors.json`, `Statistics` inlined | Frozen fixtures pass unmodified; `[deps]` still empty |
+| 4 | Add `SpikeTrain` ↔ timestamp adapters + the full edge-case suite from [Precision policy](#precision-policy) | Narrowing-collision test fails loudly without the guard, passes with it |
+| 5 | Port `ActivityRegion` + routing kernel, `Printf` dropped, `LinearAlgebra` dropped, constants renamed, `adapt_leak!` **excluded** | NeuroPulse's 899-line suite ports and passes (minus `adapt_leak!` tests) **and** `adapt_leak!`'s destination is decided — see the gate below |
+| 6 | Port deprecated aliases as wrapper functions with `depwarn` | `update_relevance!` etc. resolve and warn |
+| 7 | Update `README.md`, `AGENTS.md`, `REVIEW.md`, `docs/src/`, and add scope tests asserting the exported symbol set | Stated boundary matches shipped code exactly |
+| 8 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); bump to `0.2.0` and update `CHANGELOG.md` | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix |
+| 9 | Add redirect READMEs to `NeuroPulse.jl` and `SpikeStream.jl` | *Cross-repo; requires write access to those repos* |
+| 10 | Migrate/triage open issues (NeuroPulse #40, #14; SpikeStream #27) and open PRs (NeuroPulse #41, SpikeStream #26) per rmems/.github#4 | Every open item has a documented destination |
+| 11 | **Archive** `NeuroPulse.jl` and `SpikeStream.jl` | Steps 8–10 complete **and** the v0.2.0 upgrade path is published |
 
 **Archiving is the last step and is a deliberate human action.** No automation in this
 workstream may archive, transfer, or delete a repository. Source repositories remain as
 provenance and must never be deleted (rmems/.github#3, migration policy 9).
+
+### Gate: `adapt_leak!` may not be removed into a void
+
+`adapt_leak!` is a working public function, and issue #53 promises that no repository is
+archived before its supported upgrade path is published. Removing it while its
+destination is still an open question would hand a consumer a migration guide that points
+nowhere. It is therefore a hard gate on three steps:
+
+- **Step 5** (removal) — the destination is decided and recorded in this ADR.
+- **Step 8** (`v0.2.0`) — the migration guide names where to get it, with a working
+  reference (a repository and, if it has landed, a version or commit).
+- **Step 11** (archive) — the replacement is published, **or** the owner has explicitly
+  retired the function with no successor and the guide says so plainly.
+
+"Decided" means a named destination, not an intention. If the decision is still open when
+step 5 comes up, the correct move is to carry `adapt_leak!` forward temporarily as a
+deprecated, documented-as-out-of-scope function rather than to drop it — an acknowledged
+scope wart beats a broken upgrade path.
 
 ### History preservation
 
@@ -457,14 +530,18 @@ convenience, not the safety net.
 
 ## Upgrade matrix
 
-Published as `docs/src/migration.md` at step 7. Recorded here so the plan is reviewable
+Published as `docs/src/migration.md` at step 8. Recorded here so the plan is reviewable
 before the code exists.
+
+`v0.2.0` ships the **regenerated canonical UUID** from step 2, written below as
+`<canonical>`. Because regeneration happens before the release, every consumer migrates
+its identity exactly once; there is no second transition.
 
 | Consumer | Today | After v0.2.0 | Break? |
 |---|---|---|---|
-| **TemporalFocus v0.1.0 consumers** | `TemporalFocus` @ `7f3c9f2a-…`, attention API | Same name, same UUID, same API, plus features + routing | **No.** Purely additive. |
-| **NeuroPulse consumers** (`rmems/Limen-Capital`) | `TemporalFocus` @ `b7e4c3f2-…`, `[sources]` → `Limen-Neural/NeuroPulse.jl` @ `40e39206…`; loaded optionally, routing actually vendored | `TemporalFocus` @ `7f3c9f2a-…`, `[sources]` → `rmems/TemporalFocus.jl`; `update_relevance!` etc. keep working with a deprecation warning | **Yes, two:** UUID + source URL must change; **`adapt_leak!` is removed** and must be re-sourced from wherever it is rehomed. Low urgency in practice — the `rev` pin is frozen and the load is behind a `try`, so nothing breaks until they choose to de-vendor. |
-| **SpikeStream consumers** | `SpikeStream` @ `a3c7f1e2-…`, tag `v0.1.0` | `using TemporalFocus`; function names, signatures, and `Float64` return types unchanged | **Yes, one:** package name + UUID. No API change. |
+| **TemporalFocus v0.1.0 consumers** | `TemporalFocus` @ `7f3c9f2a-…`, attention API | `TemporalFocus` @ `<canonical>`, same API, plus features + routing | **API: no**, purely additive. **UUID: yes**, but v0.1.0 was never tagged or registered, so no consumer can be pinned to it; the audit found none. |
+| **NeuroPulse consumers** (`rmems/Limen-Capital`) | `TemporalFocus` @ `b7e4c3f2-…`, `[sources]` → `Limen-Neural/NeuroPulse.jl` @ `40e39206…`; loaded optionally, routing actually vendored | `TemporalFocus` @ `<canonical>`, `[sources]` → `rmems/TemporalFocus.jl`; `update_relevance!` etc. keep working with a deprecation warning | **Yes, two:** UUID + source URL must change; **`adapt_leak!` is removed** and must be re-sourced from wherever it is rehomed. Low urgency in practice — the `rev` pin is frozen and the load is behind a `try`, so nothing breaks until they choose to de-vendor. |
+| **SpikeStream consumers** | `SpikeStream` @ `a3c7f1e2-…`, tag `v0.1.0` | `using TemporalFocus` @ `<canonical>`; function names, signatures, and `Float64` return types unchanged | **Yes, one:** package name + UUID. No API change. |
 | **`rmems/kinetic-signals`** (Rust) | Fixture-parity contract with `SpikeStream.jl`, no FFI | Same fixtures, now under `TemporalFocus.jl` | Docs-only. Output ranges are unchanged and remain a contract. |
 
 No repository is archived before its supported upgrade path is published.
@@ -477,23 +554,24 @@ No repository is archived before its supported upgrade path is published.
 |---|---|
 | **Boundary dilution.** Three concerns in one package makes future scope arguments harder to win. | Keep file-level module boundaries; add scope tests asserting the exact exported symbol set; keep `AGENTS.md` / `REVIEW.md` exclusions verbatim and strengthened. |
 | **`readout_ema` misread as learning state**, inviting a future STDP PR. | Stated explicitly in the module docstring and in `REVIEW.md`'s boundary checklist. |
-| **Silent `Float32` corruption of features.** | The `check_precision` guard plus the dedicated collision test in step 3. |
+| **Silent `Float32` corruption of features.** | The `check_precision` guard plus the dedicated collision test in step 4. |
 | **`windowed_spike_features` boundary semantics** are subtle (`include_right_edge`, `nextfloat`) and easy to "clean up" wrongly. | Port fixture-first; never regenerate `spike_vectors.json`. |
-| **Julia compat floor.** TemporalFocus targets 1.9–1.12 (+ macOS/Windows on 1.11); NeuroPulse's practice was **1.12-only**; SpikeStream tests `min`/`1`/`pre`. Imported code may not actually run on 1.9. | Validate the ported routing kernel on 1.9 in step 4 **before** claiming the compat range. Raise the floor deliberately if needed — do not discover it in a release. |
+| **Julia compat floor.** TemporalFocus targets 1.9–1.12 (+ macOS/Windows on 1.11); NeuroPulse's practice was **1.12-only**; SpikeStream tests `min`/`1`/`pre`. Imported code may not actually run on 1.9. | Validate the ported routing kernel on 1.9 in step 5 **before** claiming the compat range. Raise the floor deliberately if needed — do not discover it in a release. |
 | **Test-suite merge.** 583 + 899 + 245 = 1727 lines of tests across three conventions. | Merge as separate top-level `@testset`s per step; never rewrite an assertion while moving it. |
 | **Concurrent branches.** Eight sibling workstreams are touching this repository. | Keep each step's diff narrow; expect `README.md` / `CHANGELOG.md` conflicts and resolve additively. |
-| **Premature archiving** strands Limen-Capital's pin or open issues. | Step 10 is gated on steps 7–9 and is a human action. |
+| **Premature archiving** strands Limen-Capital's pin or open issues. | Step 11 is gated on steps 8–10 and is a human action. |
 
 ---
 
 ## Open questions requiring a human decision
 
-1. **UUID at registration.** Accept the [recommendation](#package-identity-and-uuid)
-   (retain `7f3c9f2a-…` through consolidation, regenerate once pre-registration), or
-   override `RELEASING.md`?
+1. **UUID.** Accept the [recommendation](#package-identity-and-uuid) — regenerate
+   `uuid4()` at step 2, before the consolidated release, so no consumer migrates its
+   identity twice — even though it deviates from the literal wording of #53?
 2. **Where does `adapt_leak!` go?** `thalamic-relay`, the `brainstem-daemon` workspace,
-   or `LiquidCortex.jl`? Until this is answered, step 4 removes a working function with
-   no published destination.
+   or `LiquidCortex.jl`? This blocks step 5 under the
+   [removal gate](#gate-adapt_leak-may-not-be-removed-into-a-void); until it is answered,
+   the fallback is to carry the function forward as deprecated rather than drop it.
 3. **`Printf` vs. zero-dep diagnostics.** Accept a changed `routing_diagnostics` output
    format to keep `[deps]` empty, or add `Printf` and keep byte-identical output?
 4. **Rename `RegionRouter.spike_density` → `region_spike_rate`?** It is a breaking
@@ -509,16 +587,16 @@ No repository is archived before its supported upgrade path is published.
 
 | Criterion | Status |
 |---|---|
-| Boundary documents the pure routing kernel and excludes runtime/learning/dense/finance | **Decided here**; the code and README/AGENTS text land together at step 6 |
-| Fresh-clone `Pkg.instantiate()` + `Pkg.test()` succeed | Passing today; re-gated at step 7 |
+| Boundary documents the pure routing kernel and excludes runtime/learning/dense/finance | **Decided here**; the code and README/AGENTS text land together at step 7 |
+| Fresh-clone `Pkg.instantiate()` + `Pkg.test()` succeed | Passing today; re-gated at step 8 |
 | Every inventoried artifact retained, migrated, or explicitly retired with rationale | **Done** — see [Pre-migration inventory](#pre-migration-inventory) and [Symbol disposition](#symbol-disposition) |
-| Imported behavior has parity tests or documented intentional changes | **Planned** (steps 2, 4); intentional changes recorded here |
-| Timestamp adaptation and precision edge-case tests | **Specified** here; land at step 3 |
-| Only one active package UUID/name pair | **Decided** here; effective at step 7 |
-| Versioned migration guide and upgrade matrix | **Drafted** here as [Upgrade matrix](#upgrade-matrix); published at step 7 |
-| No active docs instruct users to depend on superseded repositories | Steps 6–8 |
-| `NeuroPulse.jl` / `SpikeStream.jl` archived with successor links | Step 10, human action, explicitly **not** automated |
-| README explains the whole accomplishment in one sentence before modules | Step 6 |
+| Imported behavior has parity tests or documented intentional changes | **Planned** (steps 3, 5); intentional changes recorded here |
+| Timestamp adaptation and precision edge-case tests | **Specified** here; land at step 4 |
+| Only one active package UUID/name pair | **Decided** here; identity set at step 2, shipped at step 8 |
+| Versioned migration guide and upgrade matrix | **Drafted** here as [Upgrade matrix](#upgrade-matrix); published at step 8 |
+| No active docs instruct users to depend on superseded repositories | Steps 7–9 |
+| `NeuroPulse.jl` / `SpikeStream.jl` archived with successor links | Step 11, human action, explicitly **not** automated |
+| README explains the whole accomplishment in one sentence before modules | Step 7 |
 
 ---
 
