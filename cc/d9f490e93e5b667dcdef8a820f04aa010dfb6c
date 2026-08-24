@@ -1,0 +1,31 @@
+experiments/jitter_test.jl
+  s_0c26100e940a5c::t_621807740e20ad 307-364
+  s_0c26100e940a5c::t_b2ac1733a89deb 801-804,807-813,815-817
+  s_0c26100e940a5c::t_ab8d81e4b06f5c 684
+  s_0c26100e940a5c::t_2a4e06d4615e66 740
+  s_0c26100e940a5c::t_3de9944ca52d35 849
+  s_0c26100e940a5c::t_a0b23e6cb7affa 717-739,741-747
+  s_0c26100e940a5c::t_a8abc2d3c4c6ac 851
+  s_0c26100e940a5c::t_f572c10fe55a85 773-796
+experiments/results/jitter_test/summary.md
+  s_0c26100e940a5c::t_d7dfe464bca9ef 76
+  s_0c26100e940a5c::t_dddba93685e8f4 72-75,77-78,90-92,96-97
+experiments/src/ExperimentUtils.jl
+  s_0c26100e940a5c::t_25781bba2c252b 63-65,69,71-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ccd9f490e93e5b667dcdef8a820f04aa010dfb6c",
+  "prompts": {},
+  "sessions": {
+    "s_0c26100e940a5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "491ce194-6eb8-4a07-8e74-cb51fef4e2b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
