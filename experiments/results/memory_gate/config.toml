@@ -1,3 +1,5 @@
+cairomakie_compat = "0.15"
+cairomakie_version = "0.15.13"
 deterministic = true
 julia_version = "1.12.6"
 kernel = "spike_attention_continuous"

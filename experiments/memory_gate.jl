@@ -19,6 +19,7 @@
 using Printf
 using Random
 using Statistics
+using TOML
 
 using CairoMakie
 using TemporalFocus
@@ -222,9 +223,17 @@ let k = 0
         stale_flags = [in_window(lag, window) for lag in STALE_LAGS]
         n_stale_in = count(stale_flags)
 
-        # Fraction of the τ-only stale mass that the hard window removed.
-        stale_clipped_fraction =
-            stale_mass_open > 0f0 ? 1f0 - stale_mass / stale_mass_open : 0f0
+        # Fraction of the τ-only stale mass that the hard window removed,
+        # measured directly on the excluded events. Computing it as
+        # `1 - stale_mass / stale_mass_open` instead cancels catastrophically:
+        # at short τ the clipped spike's mass is below one Float32 ulp of the
+        # admitted one, so the two aggregates are bit-identical and the
+        # subtraction reports exactly 0 even when a spike really was clipped.
+        stale_out = SpikeEvent[e for (e, keep) in zip(stale_events(), stale_flags) if !keep]
+        stale_removed =
+            isempty(stale_out) ? 0f0 : attention(stale_out, WINDOW_OPEN, τ)[SIGNAL]
+        stale_total = stale_mass + stale_removed
+        stale_clipped_fraction = stale_total > 0f0 ? stale_removed / stale_total : 0f0
 
         share = safe_share(target_mass, total_mass)
         leakage = stale_leakage(target_mass, stale_mass)
@@ -278,9 +287,18 @@ metrics_path = write_metrics(SLUG, rows)
 # Config
 # ---------------------------------------------------------------------------
 
+# Recorded so a reader can tell which rendering stack produced figure.png.
+const CAIROMAKIE_VERSION = string(pkgversion(CairoMakie))
+const CAIROMAKIE_COMPAT = get(
+    get(TOML.parsefile(joinpath(repo_root(), "experiments", "Project.toml")),
+        "compat", Dict{String,Any}()),
+    "CairoMakie", "(unpinned)")
+
 config = Dict{String,Any}(
     "slug" => SLUG,
     "seed" => SEED,
+    "cairomakie_version" => CAIROMAKIE_VERSION,
+    "cairomakie_compat" => CAIROMAKIE_COMPAT,
     "deterministic" => true,
     "random_draws" => false,
     "time_unit" => "ms (nominal; TemporalFocus is unit-agnostic Float32)",
@@ -549,6 +567,28 @@ decay_killed = count(r -> r.target_in_window && r.target_mass < TARGET_FLOOR, ro
 # Cells where the gate is selective but top-1 is still wrong.
 selective_but_wrong = count(r -> r.regime == "selective_gate" && !r.top1_correct, rows)
 
+# Cells where an event is admitted by the window and still contributes exactly
+# zero, because the Float32 exponential underflowed.
+underflow_rows = filter(r -> r.unrelated_in_window && r.unrelated_mass == 0f0, rows)
+underflow_note = if isempty(underflow_rows)
+    "This particular sweep happens to contain no such cell."
+else
+    r = first(underflow_rows)
+    "This sweep contains $(length(underflow_rows)) such cells — e.g. at τ = $(r.tau) ms, " *
+    "window = $(r.window) ms the $(UNRELATED_LAG) ms unrelated event is admitted " *
+    "(`unrelated_in_window = true`) and still contributes `unrelated_mass = 0.0`."
+end
+
+# Structurally clipped stale spikes whose removed mass is nonetheless negligible.
+clipped_but_massless = count(
+    r -> r.n_stale_in_window == 1 && r.stale_clipped_fraction < 0.01f0, rows)
+
+# First window index admitting exactly one stale spike, and the first admitting both.
+_first_window_admitting(n) = findfirst(
+    j -> count(in_window(lag, WINDOWS[j]) for lag in STALE_LAGS) == n, eachindex(WINDOWS))
+band_row_one = row_at(tau_slice_idx[2], _first_window_admitting(1))
+band_row_both = row_at(tau_slice_idx[2], _first_window_admitting(2))
+
 regime_summary = join(
     ["- `$(REGIMES[k])` (**$(REGIME_LABELS[k])**): $(regime_counts[k]) / $(n_cond) conditions " *
      "($(round(100 * regime_counts[k] / n_cond; digits = 1))% of the plane)"
@@ -570,7 +610,11 @@ target interaction while suppressing a stale same-neuron distractor?
 `spike_attention_continuous` applies two independent mechanisms:
 
 1. **`τ` — soft exponential decay.** Every admitted pair is scaled by
-   `temporal_weight(dt, τ) = exp(-abs(dt)/τ)`. This is smooth and never reaches zero.
+   `temporal_weight(dt, τ) = exp(-abs(dt)/τ)`. This is smooth and mathematically nonzero
+   for any finite lag — but in `Float32` it goes subnormal around `abs(dt)/τ ≈ 87` and
+   underflows to **exactly** `0` around `abs(dt)/τ ≈ 103`. So a zero mass is *not* by
+   itself evidence of hard-window rejection; the `*_in_window` columns are what
+   distinguish the two. $(underflow_note)
 2. **`TemporalBuffer.window` — a hard admissibility boundary.** A `(source, context)`
    pair contributes only when `abs(dt) <= min(source.window, context.window)`. This is a
    step function: a pair is either fully counted or fully discarded.
@@ -609,9 +653,17 @@ no unit semantics are attached, and in particular none are financial.
 - window: $(N_WINDOW) log-spaced values, $(WINDOWS[1]) → $(WINDOWS[end]) ms — starting
   **below** the target lag ($(TARGET_LAG) ms) and ending **beyond** the largest stale lag
   ($(STALE_LAGS[2]) ms) and the unrelated lag ($(UNRELATED_LAG) ms).
-- $(n_cond) conditions total. Determinism: the scene contains no random draws at all
-  (seed `$(SEED)` is recorded and applied for contract compliance only), so re-running
-  reproduces `metrics.csv` and `figure.png` exactly.
+- $(n_cond) conditions total.
+
+**Determinism, scoped honestly.** The scene contains no random draws at all (seed
+`$(SEED)` is recorded and applied for contract compliance only). `config.toml`,
+`metrics.csv` and this file are therefore fixed by the code plus the Julia version, and
+re-running reproduces them byte-for-byte. `figure.png` additionally depends on the
+resolved CairoMakie / Cairo / font stack: it is byte-identical on repeated runs **in the
+same resolved environment**, but `experiments/Project.toml` accepts any CairoMakie
+$(CAIROMAKIE_COMPAT) release and no `experiments/Manifest.toml` is committed (that policy
+belongs to the harness issue), so a different resolution or platform may render it
+differently. The versions this run used are recorded in `config.toml`.
 
 ## Zero and tie handling
 
@@ -653,8 +705,14 @@ hypothesis predicted:
 - **Selective gate.** For window between $(TARGET_LAG) ms and $(STALE_LAGS[1]) ms the target is
   admitted and both stale spikes are structurally excluded — `stale_mass` is exactly `0`
   and `target_stale_ratio` is `Inf` across that whole band, again independent of τ.
-- **Soft-decay regime.** Above window ≈ $(STALE_LAGS[1]) ms the stale spikes become admissible
-  and leakage is set purely by τ.
+- **Soft-decay regime.** Above window ≈ $(STALE_LAGS[1]) ms stale spikes start becoming
+  admissible and τ takes over as the thing that suppresses them. Leakage is a function of τ
+  *alone* only **within a fixed admission band** — the window still matters at the band
+  edges, because crossing $(STALE_LAGS[2]) ms admits the second stale spike as well. At
+  τ = $(band_row_one.tau) ms, for instance, leakage is
+  $(_fmt(band_row_one.stale_leakage)) at window = $(band_row_one.window) ms (one stale
+  spike admitted) and $(_fmt(band_row_both.stale_leakage)) at
+  window = $(band_row_both.window) ms (both admitted).
 - **Over-retentive.** With a wide window *and* a long τ, stale mass approaches and then
   passes the target: peak stale leakage in the sweep is
   **$(_fmt(worst_leak.stale_leakage))** at τ = $(worst_leak.tau) ms, window =
@@ -689,10 +747,17 @@ Concretely:
   would have kept `>= $(TARGET_FLOOR)` of it. That loss is 100% the hard window.
 - **$(decay_killed)** conditions admit the target through the gate yet still end below
   `$(TARGET_FLOOR)`. That loss is 100% exponential decay.
-- `stale_clipped_fraction` gives the same decomposition for the stale side: it is exactly
-  `1.0` while both stale spikes are gated out, drops to a partial value once one of the
-  two is admitted, and reaches `0.0` when the window covers both — a staircase in the
-  window direction, with a smooth τ gradient inside each step.
+- `stale_clipped_fraction` gives the same decomposition for the stale side. It is a
+  **mass** fraction, not an event count: exactly `1.0` while both stale spikes are gated
+  out, `0.0` once the window covers both, and in between it reports how much *mass* the
+  clipped spike was carrying. That in-between value is only large when τ is long enough
+  for the clipped spike to matter — in $(clipped_but_massless) of the conditions where one
+  of the two stale spikes is structurally clipped, the removed mass is under 1% of the
+  stale total, because at short τ the farther spike had almost no mass to begin with. The
+  purely structural staircase is the `n_stale_in_window` column; `stale_clipped_fraction`
+  is its mass-weighted counterpart. It is computed directly from the excluded events
+  rather than as `1 - gated/open`, which cancels to exactly `0` in Float32 once the
+  clipped spike falls below one ulp of the admitted one.
 
 The signature difference is visible directly in the slices (panels E and F, tables below):
 along the **window** axis the curves move in flat steps that snap at $(TARGET_LAG),
