@@ -19,8 +19,9 @@ file's own location, so experiments run correctly from a fresh clone and never
 depend on a local absolute path.
 
 Setting the `TEMPORALFOCUS_RESULTS_DIR` environment variable redirects the
-results root; leave it unset for normal runs. The package test suite uses it to
-exercise the harness in a temporary directory.
+results root (a relative value is resolved against the working directory); leave
+it unset for normal runs. The package test suite uses it to exercise the harness
+in a temporary directory.
 
 This module depends only on Julia standard libraries. It does not load
 TemporalFocus, CairoMakie, or any other experiment dependency, so it can be
@@ -57,7 +58,10 @@ repo_root() = dirname(dirname(normpath(@__DIR__)))
 
 # Directory holding every experiment's result folder. Defaults to
 # `<repo_root>/experiments/results`; `TEMPORALFOCUS_RESULTS_DIR` overrides it.
-_results_root() = get(ENV, _RESULTS_ENV, joinpath(repo_root(), "experiments", "results"))
+# A relative override is resolved against the working directory so the returned
+# path is always absolute.
+_results_root() =
+    abspath(get(ENV, _RESULTS_ENV, joinpath(repo_root(), "experiments", "results")))
 
 @inline function _check_slug(slug::AbstractString)
     occursin(_SLUG_PATTERN, slug) && slug != ".." ||
@@ -121,8 +125,10 @@ _toml_value(x::Integer) = Int(x)
 _toml_value(x::Symbol) = String(x)
 _toml_value(x::Char) = string(x)
 _toml_value(x::Union{Dates.DateTime,Dates.Date,Dates.Time}) = x
-# Round-trip through the shortest decimal form so Float32 inputs stay readable
-# (0.2f0 becomes 0.2, not 0.20000000298023224).
+# TOML floats are IEEE 754 binary64 by specification, so configuration values
+# are recorded as Float64. Round-tripping through the shortest decimal form
+# keeps Float32 inputs readable (0.2f0 becomes 0.2, not 0.20000000298023224);
+# `metrics.csv` keeps each value's own precision instead.
 _toml_value(x::AbstractFloat) = isfinite(x) ? parse(Float64, _format_float(x)) : Float64(x)
 _toml_value(x::AbstractDict) = _toml_table(x)
 _toml_value(x::NamedTuple) = _toml_table(x)
@@ -187,10 +193,10 @@ end
 
 write_config(slug::AbstractString, cfg::NamedTuple) = write_config(slug, Dict(pairs(cfg)))
 
-# Float32 and Float64 hit the concrete method below and keep full precision;
-# any other float type (Float16, BigFloat, ...) is widened, never narrowed.
-_format_float(x::AbstractFloat) = _format_float(Float64(x))
-function _format_float(x::Union{Float32,Float64})
+# Every float type keeps its own precision: the value is printed by `string`,
+# which is the shortest round-tripping form for Float32/Float64 and the full
+# decimal expansion for BigFloat. Nothing is converted to a narrower type.
+function _format_float(x::AbstractFloat)
     isnan(x) && return "NaN"
     isinf(x) && return x > 0 ? "Inf" : "-Inf"
     s = string(x)
@@ -201,6 +207,10 @@ function _format_float(x::Union{Float32,Float64})
     end
     return s
 end
+
+# Float16 shows as "Float16(0.2)"; widening to Float64 is exact and prints a
+# plain number.
+_format_float(x::Float16) = _format_float(Float64(x))
 
 _csv_cell(::Nothing) = ""
 _csv_cell(::Missing) = ""

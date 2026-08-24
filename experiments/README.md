@@ -84,14 +84,17 @@ Notes:
 
 - `Float32` values are written in their shortest decimal form, so `0.2f0`
   becomes `0.2` in both TOML and CSV — no `f0` suffix leaks into artifacts.
+  `metrics.csv` keeps each value's own precision; `config.toml` records floats
+  as `Float64`, which is what the TOML specification allows.
 - `write_metrics` requires every row to share the same field names, in the same
   order; field names become the CSV header.
 - `write_config` appends a `[provenance]` table (git commit, dirty flag, Julia
   version, UTC timestamp) unless the configuration already defines one. It is
   the only intentionally non-reproducible part of the artifacts.
-- Setting `TEMPORALFOCUS_RESULTS_DIR` redirects the results root. Leave it unset
-  for normal runs; the package test suite uses it to exercise the harness in a
-  temporary directory.
+- Setting `TEMPORALFOCUS_RESULTS_DIR` redirects the results root (a relative
+  value is resolved against the working directory). Leave it unset for normal
+  runs; the package test suite uses it to exercise the harness in a temporary
+  directory.
 
 ## Writing a new experiment
 

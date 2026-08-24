@@ -609,6 +609,15 @@ end
                 @test_throws ArgumentError result_dir("../escape")
                 @test_throws ArgumentError result_dir("")
                 @test_throws ArgumentError figure_path("smoke-slug", "../figure.png")
+
+                # A relative results root still yields an absolute directory.
+                cd(tmp) do
+                    withenv("TEMPORALFOCUS_RESULTS_DIR" => "relative-results") do
+                        relative = result_dir("smoke-slug")
+                        @test isabspath(relative)
+                        @test isdir(relative)
+                    end
+                end
             end
 
             @testset "write_config" begin
@@ -657,6 +666,28 @@ end
                 @test_throws ArgumentError write_metrics("smoke-slug", NamedTuple[])
                 @test_throws ArgumentError write_metrics("smoke-slug", [(a = 1,), (b = 2,)])
                 @test_throws ArgumentError write_metrics("smoke-slug", [1, 2])
+            end
+
+            @testset "float formatting" begin
+                path = write_metrics(
+                    "smoke-slug",
+                    [(
+                        f32 = 0.2f0,
+                        f64 = 0.1234567890123456,
+                        wide = big"0.1",
+                        half = Float16(0.5),
+                        nan = NaN32,
+                        inf = -Inf,
+                    )],
+                )
+                cells = split(readlines(path)[2], ",")
+                # Each type keeps its own precision; nothing is narrowed.
+                @test cells[1] == "0.2"
+                @test cells[2] == "0.1234567890123456"
+                @test parse(BigFloat, cells[3]) == big"0.1"
+                @test cells[4] == "0.5"
+                @test cells[5] == "NaN"
+                @test cells[6] == "-Inf"
             end
 
             @testset "write_summary" begin
