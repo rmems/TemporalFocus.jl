@@ -1,0 +1,29 @@
+test/runtests.jl
+  s_0c26100e940a5c::t_38e61b3d52b97e 628,652
+  s_0c26100e940a5c::t_5fa6d93b64cd79 706-766,777-782
+docs/gallery.jl
+  s_0c26100e940a5c::t_3dba15aaa5d974 340-348,350,352-357,359,371-373,379,381,386,413-421,436-440
+  s_0c26100e940a5c::t_be03ce9d8c8711 456-469,480-481,503-504,513-514,518,540-541,558,594-595
+  s_0c26100e940a5c::t_38de04c9c112ef 149,155-157,167-173,175,177,180-200,202,206-209,211-212,227-233,237-238,244-246
+  s_0c26100e940a5c::t_5fa6d93b64cd79 625-626
+  s_0c26100e940a5c::t_38e61b3d52b97e 750-757
+  s_0c26100e940a5c::t_a039d4527b1330 423-424,613-624,627-630,842
+docs/src/experiments.md
+  s_0c26100e940a5c::t_c8740edfc241f3 46-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "457a72c86d6edab41981271e41c439aea24f0091",
+  "prompts": {},
+  "sessions": {
+    "s_0c26100e940a5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "491ce194-6eb8-4a07-8e74-cb51fef4e2b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
