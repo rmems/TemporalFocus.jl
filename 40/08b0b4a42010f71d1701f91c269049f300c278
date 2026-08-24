@@ -1,0 +1,54 @@
+experiments/src/ExperimentUtils.jl
+  s_0c26100e940a5c::t_e7165825290852 1-55,57,61-89,91-286
+  s_0c26100e940a5c::t_3096cd61461483 56
+  s_0c26100e940a5c::t_fa7a96b14ac982 90
+  s_0c26100e940a5c::t_c2dd1b89b0e152 58-60
+experiments/run_all.jl
+  s_0c26100e940a5c::t_d1c07e13edf898 23-30
+  s_0c26100e940a5c::t_444e8678509ee0 99
+  s_0c26100e940a5c::t_1bce86c358abb0 1-22,31-84,86-98,100-150
+  s_0c26100e940a5c::t_f77d31d3d180ff 85
+AGENTS.md
+  s_0c26100e940a5c::t_d6d5f3b7cffffd 41-44
+experiments/harness_smoke.jl
+  s_0c26100e940a5c::t_f22316f7182727 120
+  s_0c26100e940a5c::t_a65366d689c72a 132,138-139
+  s_0c26100e940a5c::t_e6e267aa65804d 149,152
+  s_0c26100e940a5c::t_88053c7140f768 175
+  s_0c26100e940a5c::t_06acd672a67897 4
+  s_0c26100e940a5c::t_4d633e46c29c4e 153-154
+  s_0c26100e940a5c::t_a168afef46383e 44
+  s_0c26100e940a5c::t_9df8f0409f7d1a 181
+  s_0c26100e940a5c::t_03c1b5dde88625 106,109-116
+  s_0c26100e940a5c::t_b6303b5c2260b0 1-3,5-43,45-105,107-108,117-119,121-131,133-137,140-148,150-151,155-174,176-180,182-185
+test/runtests.jl
+  s_0c26100e940a5c::t_3aa0edb617feb5 7-12
+  s_0c26100e940a5c::t_210522541fc1ab 590-670
+README.md
+  s_0c26100e940a5c::t_00a63770bf9b7b 120-139
+Project.toml
+  s_0c26100e940a5c::t_795c95cacd19e2 12-13,16
+.gitignore
+  s_0c26100e940a5c::t_2cac3f971eb188 13-17
+experiments/README.md
+  s_0c26100e940a5c::t_45148dbaba49c0 1-130,134-156
+  s_0c26100e940a5c::t_783c86d8e84030 131-133
+experiments/Project.toml
+  s_0c26100e940a5c::t_bb9444698e65b4 1-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4008b0b4a42010f71d1701f91c269049f300c278",
+  "prompts": {},
+  "sessions": {
+    "s_0c26100e940a5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "491ce194-6eb8-4a07-8e74-cb51fef4e2b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
