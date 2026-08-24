@@ -1,0 +1,58 @@
+experiments/temporal_lens.jl
+  s_0c26100e940a5c::t_0841da8f203799 431,434,437
+  s_0c26100e940a5c::t_1f0c10bcf7b47b 428-430,438-447
+  s_0c26100e940a5c::t_e704521a8ab411 39-40
+  s_0c26100e940a5c::t_d3175341f9b7d0 133,135-142,144-149,153,156-158,162-166,168-170,177-178
+  s_0c26100e940a5c::t_1c50a41df6d94a 360-363
+  s_0c26100e940a5c::t_9a50dc9d4b79af 523-524
+  s_0c26100e940a5c::t_350713cdbe7957 411-421
+  s_0c26100e940a5c::t_acefc4a28eb55a 152,154,160,167,173-176,179-181
+  s_0c26100e940a5c::t_8282872cd4948d 253,313,320
+  s_0c26100e940a5c::t_6918037f001088 496-498
+  s_0c26100e940a5c::t_b44d28dee63962 1-38,41,45-132,134,143,150-151,155,159,161,171-172,182-223,232-252,254-269,271,273-278,280-294,296-312,314-319,321-323,325-326,328,330-335,337-359,364-393,397-405,408-410,422-427,432-433,435-436,448-467,469-495,499-522,526,529-543
+  s_0c26100e940a5c::t_656b739869f363 224-231
+  s_0c26100e940a5c::t_9952d1f5328dc6 272,279,327,329
+  s_0c26100e940a5c::t_ad0ca487ba6a83 406-407
+  s_0c26100e940a5c::t_9a3b506cb81534 295,336
+  s_0c26100e940a5c::t_fb8efa622bf42e 468
+  s_0c26100e940a5c::t_39907ec07dc520 525,527-528
+  s_0c26100e940a5c::t_edb9d5d3021be1 270,324
+  s_0c26100e940a5c::t_e0736148e3965f 394-396
+  s_0c26100e940a5c::t_9e2034756f2541 42-44
+experiments/results/temporal_lens/config.toml
+  s_0c26100e940a5c::t_ac895c1e59f9f0 1,5,10
+  s_0c26100e940a5c::t_bdae54df048229 2-4,6-9,11-12
+experiments/Project.toml
+  s_0c26100e940a5c::t_46c27b366f537b 1-10
+experiments/results/temporal_lens/metrics.csv
+  s_0c26100e940a5c::t_bdae54df048229 1-4026
+.gitignore
+  s_0c26100e940a5c::t_4740a2423a81f9 24-26
+experiments/run_all.jl
+  s_0c26100e940a5c::t_82a61e88e2ae82 1-12
+experiments/README.md
+  s_0c26100e940a5c::t_a29377b7459d62 1-45
+experiments/results/temporal_lens/summary.md
+  s_0c26100e940a5c::t_52ef866ebe8602 26-28
+  s_0c26100e940a5c::t_ac895c1e59f9f0 3-5,32-41,50,52
+  s_0c26100e940a5c::t_bdae54df048229 1-2,6-25,29-31,42-47,51,53-54,65-71
+  s_0c26100e940a5c::t_dd27aa5b8328bf 48-49,55-64
+experiments/src/ExperimentUtils.jl
+  s_0c26100e940a5c::t_4f0097affcaf53 1-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a6a8e65dc7ccc70e9116590d202fa705ab97967f",
+  "prompts": {},
+  "sessions": {
+    "s_0c26100e940a5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "491ce194-6eb8-4a07-8e74-cb51fef4e2b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
