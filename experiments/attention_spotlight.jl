@@ -217,11 +217,15 @@ function replay(cfg, events)
     context_buffer = TemporalBuffer(cfg.buffer_window)
 
     steps = ReplayStep[]
-    n_steps = round(Int, cfg.t_end / cfg.sample_dt)
+    n_steps = max(1, round(Int, cfg.t_end / cfg.sample_dt))
     next_event = 1
 
     for step in 0:n_steps
-        t = Float32(step) * cfg.sample_dt
+        # Sample on the `sample_dt` grid, but never past the declared horizon,
+        # and finish exactly at `t_end`. That keeps the two guarantees intact
+        # when `t_end` is not an exact multiple of `sample_dt`: every recorded
+        # event is consumed, and nothing is recorded after the horizon.
+        t = step == n_steps ? cfg.t_end : min(Float32(step) * cfg.sample_dt, cfg.t_end)
 
         # 1. Causal ingest: nothing from the future ever enters a buffer.
         ingested_source = 0
