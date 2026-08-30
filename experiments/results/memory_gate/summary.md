@@ -168,8 +168,10 @@ Concretely:
 
 The signature difference is visible directly in the slices (panels E and F, tables below):
 along the **window** axis the curves move in flat steps that snap at 8.0,
-60.0 and 95.0 ms; along the **τ** axis the same quantities move as
-smooth sigmoids with no discontinuity anywhere.
+60.0 and 95.0 ms; along the **τ** axis the quantities move along
+smooth curves with no discontinuity. Leakage rises monotonically as stale mass catches up,
+while target share is unimodal: it first rises as the target survives decay, then falls once
+the stale spikes retain enough mass to compete.
 
 ## Contrary / unexpected findings (kept, not tuned away)
 
@@ -279,7 +281,7 @@ above is a verbatim row of `metrics.csv`.
   - **C** the same leakage with the hard gate off (τ only) — B's counterfactual
   - **D** regime map, with the top-1-correct boundary outlined
   - **E** slice at fixed τ, sweeping the window — flat steps at the event lags
-  - **F** slice at fixed window, sweeping τ — smooth sigmoids, no discontinuity
+  - **F** slice at fixed window, sweeping τ — smooth leakage and unimodal target-share curves
 
 ## Reproduce
 

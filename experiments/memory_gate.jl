@@ -92,63 +92,63 @@ const INK_MUTED = "#5c5c5c"
 # Scene
 # ---------------------------------------------------------------------------
 
-logspace(lo::Real, hi::Real, n::Integer) =
+_logspace(lo::Real, hi::Real, n::Integer) =
     Float32[round(Float32(x); sigdigits = 4)
             for x in exp10.(range(log10(Float64(lo)), log10(Float64(hi)); length = n))]
 
 """Source volley: one query spike per neuron at `T_NOW`."""
-source_events() = [SpikeEvent(i, T_NOW, SOURCE_VALUE) for i in 1:N_NEURONS]
+_source_events() = [SpikeEvent(i, T_NOW, SOURCE_VALUE) for i in 1:N_NEURONS]
 
-target_events() = [SpikeEvent(SIGNAL, T_NOW - TARGET_LAG, TARGET_VALUE)]
-stale_events() = [SpikeEvent(SIGNAL, T_NOW - lag, STALE_VALUE) for lag in STALE_LAGS]
-competitor_events() = [SpikeEvent(COMPETITOR, T_NOW - COMPETITOR_LAG, COMPETITOR_VALUE)]
-unrelated_events() = [SpikeEvent(UNRELATED, T_NOW - UNRELATED_LAG, UNRELATED_VALUE)]
+_target_events() = [SpikeEvent(SIGNAL, T_NOW - TARGET_LAG, TARGET_VALUE)]
+_stale_events() = [SpikeEvent(SIGNAL, T_NOW - lag, STALE_VALUE) for lag in STALE_LAGS]
+_competitor_events() = [SpikeEvent(COMPETITOR, T_NOW - COMPETITOR_LAG, COMPETITOR_VALUE)]
+_unrelated_events() = [SpikeEvent(UNRELATED, T_NOW - UNRELATED_LAG, UNRELATED_VALUE)]
 
-all_context_events() =
-    vcat(target_events(), stale_events(), competitor_events(), unrelated_events())
+_all_context_events() =
+    vcat(_target_events(), _stale_events(), _competitor_events(), _unrelated_events())
 
 # Transparent (identity) readout, so the kernel output *is* the per-neuron
 # attention vector and nothing about the mapping needs to be inverted.
 const READOUT = Float32[i == j for i in 1:N_NEURONS, j in 1:N_NEURONS]
 
 """
-    attention(context_events, window, τ) -> Vector{Float32}
+    _attention(context_events, window, τ) -> Vector{Float32}
 
 Per-neuron attention for a context sub-scene, using the real kernel. Both
 buffers carry the same `window`; `spike_attention_continuous` admits a pair
 only when `abs(dt) <= min(source.window, context.window)`.
 """
-function attention(context_events::Vector{SpikeEvent}, window::Float32, τ::Float32)
-    source = TemporalBuffer(window, source_events())
+function _attention(context_events::Vector{SpikeEvent}, window::Float32, τ::Float32)
+    source = TemporalBuffer(window, _source_events())
     context = TemporalBuffer(window, context_events)
     return spike_attention_continuous(source, context, READOUT; τ = τ)
 end
 
 """Exactly the kernel's admissibility test, on the same `Float32` values."""
-in_window(lag::Float32, window::Float32) = abs(lag) <= window
+_in_window(lag::Float32, window::Float32) = abs(lag) <= window
 
 # ---------------------------------------------------------------------------
 # Derived metrics (zero handling is documented in summary.md)
 # ---------------------------------------------------------------------------
 
 # share of *all* attention mass in the scene that sits on the target interaction
-safe_share(part::Float32, total::Float32) = total > 0f0 ? part / total : 0f0
+_safe_share(part::Float32, total::Float32) = total > 0f0 ? part / total : 0f0
 
 # fraction of the signal neuron's own mass contributed by stale spikes
-function stale_leakage(target_mass::Float32, stale_mass::Float32)
+function _stale_leakage(target_mass::Float32, stale_mass::Float32)
     denom = target_mass + stale_mass
     return denom > 0f0 ? stale_mass / denom : 0f0
 end
 
 # `Inf` when the gate admits the target but no stale mass; `NaN` when neither
 # the target nor any stale spike contributes.
-function target_stale_ratio(target_mass::Float32, stale_mass::Float32)
+function _target_stale_ratio(target_mass::Float32, stale_mass::Float32)
     stale_mass > 0f0 && return target_mass / stale_mass
     target_mass > 0f0 && return Inf32
     return NaN32
 end
 
-function classify(target_in::Bool, target_mass::Float32, n_stale_in::Int, leakage::Float32)
+function _classify(target_in::Bool, target_mass::Float32, n_stale_in::Int, leakage::Float32)
     target_in || return 1                     # the hard window removed the target outright
     target_mass < TARGET_FLOOR && return 2    # in-window, but exponential decay erased it
     n_stale_in == 0 && return 3               # target kept, every stale spike gated out
@@ -182,8 +182,8 @@ end
 
 Random.seed!(SEED)
 
-const TAUS = logspace(TAU_MIN, TAU_MAX, N_TAU)
-const WINDOWS = logspace(WINDOW_MIN, WINDOW_MAX, N_WINDOW)
+const TAUS = _logspace(TAU_MIN, TAU_MAX, N_TAU)
+const WINDOWS = _logspace(WINDOW_MIN, WINDOW_MAX, N_WINDOW)
 
 rows = Vector{NamedTuple}(undef, length(TAUS) * length(WINDOWS))
 share_map = fill(NaN32, length(TAUS), length(WINDOWS))
@@ -196,11 +196,11 @@ top1_map = zeros(Int, length(TAUS), length(WINDOWS))
 
 let k = 0
     for (i, τ) in pairs(TAUS), (j, window) in pairs(WINDOWS)
-        att_full = attention(all_context_events(), window, τ)
-        att_target = attention(target_events(), window, τ)
-        att_stale = attention(stale_events(), window, τ)
-        att_comp = attention(competitor_events(), window, τ)
-        att_unrel = attention(unrelated_events(), window, τ)
+        att_full = _attention(_all_context_events(), window, τ)
+        att_target = _attention(_target_events(), window, τ)
+        att_stale = _attention(_stale_events(), window, τ)
+        att_comp = _attention(_competitor_events(), window, τ)
+        att_unrel = _attention(_unrelated_events(), window, τ)
 
         target_mass = att_target[SIGNAL]
         stale_mass = att_stale[SIGNAL]
@@ -216,11 +216,11 @@ let k = 0
             error("attention decomposition is not additive at τ=$(τ), window=$(window)")
 
         # Counterfactual with the hard gate disabled: isolates the τ effect.
-        target_mass_open = attention(target_events(), WINDOW_OPEN, τ)[SIGNAL]
-        stale_mass_open = attention(stale_events(), WINDOW_OPEN, τ)[SIGNAL]
+        target_mass_open = _attention(_target_events(), WINDOW_OPEN, τ)[SIGNAL]
+        stale_mass_open = _attention(_stale_events(), WINDOW_OPEN, τ)[SIGNAL]
 
-        target_in = in_window(TARGET_LAG, window)
-        stale_flags = [in_window(lag, window) for lag in STALE_LAGS]
+        target_in = _in_window(TARGET_LAG, window)
+        stale_flags = [_in_window(lag, window) for lag in STALE_LAGS]
         n_stale_in = count(stale_flags)
 
         # Fraction of the τ-only stale mass that the hard window removed,
@@ -229,24 +229,24 @@ let k = 0
         # at short τ the clipped spike's mass is below one Float32 ulp of the
         # admitted one, so the two aggregates are bit-identical and the
         # subtraction reports exactly 0 even when a spike really was clipped.
-        stale_out = SpikeEvent[e for (e, keep) in zip(stale_events(), stale_flags) if !keep]
+        stale_out = SpikeEvent[e for (e, keep) in zip(_stale_events(), stale_flags) if !keep]
         stale_removed =
-            isempty(stale_out) ? 0f0 : attention(stale_out, WINDOW_OPEN, τ)[SIGNAL]
+            isempty(stale_out) ? 0f0 : _attention(stale_out, WINDOW_OPEN, τ)[SIGNAL]
         stale_total = stale_mass + stale_removed
         stale_clipped_fraction = stale_total > 0f0 ? stale_removed / stale_total : 0f0
 
-        share = safe_share(target_mass, total_mass)
-        leakage = stale_leakage(target_mass, stale_mass)
-        ratio = target_stale_ratio(target_mass, stale_mass)
+        share = _safe_share(target_mass, total_mass)
+        leakage = _stale_leakage(target_mass, stale_mass)
+        ratio = _target_stale_ratio(target_mass, stale_mass)
 
         # `argmax` breaks ties toward the lowest neuron id; 0 means "no mass
         # anywhere, so no winner exists".
         top1 = maximum(att_full) > 0f0 ? argmax(att_full) : 0
-        regime = classify(target_in, target_mass, n_stale_in, leakage)
+        regime = _classify(target_in, target_mass, n_stale_in, leakage)
 
         share_map[i, j] = share
         leak_map[i, j] = leakage
-        leak_open_map[i, j] = stale_leakage(target_mass_open, stale_mass_open)
+        leak_open_map[i, j] = _stale_leakage(target_mass_open, stale_mass_open)
         regime_map[i, j] = regime
         top1_map[i, j] = top1
 
@@ -261,8 +261,8 @@ let k = 0
             stale_1_in_window = stale_flags[1],
             stale_2_in_window = stale_flags[2],
             n_stale_in_window = n_stale_in,
-            competitor_in_window = in_window(COMPETITOR_LAG, window),
-            unrelated_in_window = in_window(UNRELATED_LAG, window),
+            competitor_in_window = _in_window(COMPETITOR_LAG, window),
+            unrelated_in_window = _in_window(UNRELATED_LAG, window),
             target_mass = _r6(target_mass),
             stale_mass = _r6(stale_mass),
             competitor_mass = _r6(competitor_mass),
@@ -335,15 +335,15 @@ config_path = write_config(SLUG, config)
 # Slices
 # ---------------------------------------------------------------------------
 
-nearest_index(grid, value) = argmin(abs.(log10.(Float64.(grid)) .- log10(Float64(value))))
+_nearest_index(grid, value) = argmin(abs.(log10.(Float64.(grid)) .- log10(Float64(value))))
 
 const TAU_SLICE_TARGETS = (2.0, 20.0, 200.0)
 const WINDOW_SLICE_TARGETS = (5.0, 40.0, 200.0)
 
-tau_slice_idx = [nearest_index(TAUS, v) for v in TAU_SLICE_TARGETS]
-window_slice_idx = [nearest_index(WINDOWS, v) for v in WINDOW_SLICE_TARGETS]
+tau_slice_idx = [_nearest_index(TAUS, v) for v in TAU_SLICE_TARGETS]
+window_slice_idx = [_nearest_index(WINDOWS, v) for v in WINDOW_SLICE_TARGETS]
 
-row_at(i, j) = rows[(i - 1) * length(WINDOWS) + j]
+_row_at(i, j) = rows[(i - 1) * length(WINDOWS) + j]
 
 # ---------------------------------------------------------------------------
 # Figure — the "memory control panel"
@@ -354,13 +354,13 @@ CairoMakie.activate!(type = "png", px_per_unit = 2)
 xs = Float64.(log10.(TAUS))
 ys = Float64.(log10.(WINDOWS))
 
-function log_ticks(vals)
+function _log_ticks(vals)
     candidates = [1, 2, 3, 5, 10, 20, 30, 50, 100, 200, 300]
     keep = filter(t -> minimum(vals) <= t <= maximum(vals), candidates)
     return (log10.(Float64.(keep)), string.(keep))
 end
 
-function reference_lines!(ax)
+function _reference_lines!(ax)
     for lag in (TARGET_LAG, STALE_LAGS...)
         hlines!(ax, [log10(Float64(lag))]; color = (:white, 0.85), linewidth = 3.0)
         hlines!(ax, [log10(Float64(lag))]; color = (:black, 0.65), linewidth = 1.2,
@@ -368,7 +368,7 @@ function reference_lines!(ax)
     end
 end
 
-function phase_axis(pos, title, subtitle)
+function _phase_axis(pos, title, subtitle)
     ax = Axis(pos;
         title = title,
         subtitle = subtitle,
@@ -379,8 +379,8 @@ function phase_axis(pos, title, subtitle)
         ylabel = "window  (hard gate, ms)",
         xlabelsize = 12,
         ylabelsize = 12,
-        xticks = log_ticks(TAUS),
-        yticks = log_ticks(WINDOWS),
+        xticks = _log_ticks(TAUS),
+        yticks = _log_ticks(WINDOWS),
         xgridvisible = false,
         ygridvisible = false,
         xticklabelsize = 10,
@@ -389,7 +389,7 @@ function phase_axis(pos, title, subtitle)
     return ax
 end
 
-ink_for(hex) = begin
+_ink_for(hex) = begin
     c = parse(RGBf, hex)
     0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b > 0.55 ? :black : :white
 end
@@ -405,36 +405,36 @@ Label(fig[2, 1:6],
       "Dashed lines mark window = target / stale lags.";
       fontsize = 11.5, color = INK_MUTED, halign = :left, padding = (8, 0, 0, 8))
 
-ax_share = phase_axis(fig[3, 1], "A · target attention share",
+ax_share = _phase_axis(fig[3, 1], "A · target attention share",
                       "target mass ÷ total attention mass")
 hm_share = heatmap!(ax_share, xs, ys, share_map;
                     colormap = :Blues, colorrange = (0.0, 0.8))
-reference_lines!(ax_share)
+_reference_lines!(ax_share)
 Colorbar(fig[3, 2], hm_share; label = "target share", labelsize = 11, ticklabelsize = 10,
          width = 12)
 
-ax_leak = phase_axis(fig[3, 3], "B · stale leakage",
+ax_leak = _phase_axis(fig[3, 3], "B · stale leakage",
                      "stale ÷ (target + stale) on the signal neuron")
 hm_leak = heatmap!(ax_leak, xs, ys, leak_map;
                    colormap = :Reds, colorrange = (0.0, 1.0))
-reference_lines!(ax_leak)
+_reference_lines!(ax_leak)
 Colorbar(fig[3, 4], hm_leak; label = "stale leakage", labelsize = 11, ticklabelsize = 10,
          width = 12)
 
-ax_open = phase_axis(fig[3, 5], "C · stale leakage with the hard gate OFF",
+ax_open = _phase_axis(fig[3, 5], "C · stale leakage with the hard gate OFF",
                      "counterfactual at window = ∞ — the τ-only half of panel B")
 hm_open = heatmap!(ax_open, xs, ys, leak_open_map;
                    colormap = :Reds, colorrange = (0.0, 1.0))
-reference_lines!(ax_open)
+_reference_lines!(ax_open)
 Colorbar(fig[3, 6], hm_open; label = "stale leakage (τ only)", labelsize = 11,
          ticklabelsize = 10, width = 12)
 
-ax_regime = phase_axis(fig[4, 1:2], "D · regime map",
+ax_regime = _phase_axis(fig[4, 1:2], "D · regime map",
                        "black outline = region where top-1 is the target neuron")
 heatmap!(ax_regime, xs, ys, Float64.(regime_map);
          colormap = cgrad([parse(RGBf, c) for c in REGIME_COLORS], 5; categorical = true),
          colorrange = (0.5, 5.5))
-reference_lines!(ax_regime)
+_reference_lines!(ax_regime)
 
 regime_counts = [count(==(k), regime_map) for k in 1:length(REGIMES)]
 for k in 1:length(REGIMES)
@@ -449,7 +449,7 @@ for k in 1:length(REGIMES)
     tall = (maximum(kx) - minimum(kx)) < 0.5 * (maximum(ky) - minimum(ky))
     text!(ax_regime, kx[m], ky[m]; text = REGIME_LABELS[k], align = (:center, :center),
           fontsize = 11, font = :bold, rotation = tall ? π / 2 : 0.0,
-          color = ink_for(REGIME_COLORS[k]))
+          color = _ink_for(REGIME_COLORS[k]))
 end
 
 # Where the target neuron actually wins top-1. Deliberately *not* the same shape
@@ -525,12 +525,12 @@ save(figure_file, fig)
 # Summary
 # ---------------------------------------------------------------------------
 
-function slice_table_over_windows(i)
+function _slice_table_over_windows(i)
     io = IOBuffer()
     println(io, "| window (ms) | target in win | stale in win | target mass | stale mass | target share | stale leakage | target÷stale | top-1 | regime |")
     println(io, "|---:|:--:|:--:|---:|---:|---:|---:|---:|:--:|:--|")
     for j in eachindex(WINDOWS)
-        r = row_at(i, j)
+        r = _row_at(i, j)
         @printf(io, "| %.6g | %s | %d/2 | %s | %s | %s | %s | %s | %s | %s |\n",
             r.window, r.target_in_window ? "yes" : "no", r.n_stale_in_window,
             _fmt(r.target_mass), _fmt(r.stale_mass), _fmt(r.target_share),
@@ -540,12 +540,12 @@ function slice_table_over_windows(i)
     return rstrip(String(take!(io)))
 end
 
-function slice_table_over_taus(j)
+function _slice_table_over_taus(j)
     io = IOBuffer()
     println(io, "| τ (ms) | target mass | stale mass | target mass (no window) | stale mass (no window) | target share | stale leakage | top-1 | regime |")
     println(io, "|---:|---:|---:|---:|---:|---:|---:|:--:|:--|")
     for i in eachindex(TAUS)
-        r = row_at(i, j)
+        r = _row_at(i, j)
         @printf(io, "| %.6g | %s | %s | %s | %s | %s | %s | %s | %s |\n",
             r.tau, _fmt(r.target_mass), _fmt(r.stale_mass),
             _fmt(r.target_mass_open_window), _fmt(r.stale_mass_open_window),
@@ -585,9 +585,9 @@ clipped_but_massless = count(
 
 # First window index admitting exactly one stale spike, and the first admitting both.
 _first_window_admitting(n) = findfirst(
-    j -> count(in_window(lag, WINDOWS[j]) for lag in STALE_LAGS) == n, eachindex(WINDOWS))
-band_row_one = row_at(tau_slice_idx[2], _first_window_admitting(1))
-band_row_both = row_at(tau_slice_idx[2], _first_window_admitting(2))
+    j -> count(_in_window(lag, WINDOWS[j]) for lag in STALE_LAGS) == n, eachindex(WINDOWS))
+band_row_one = _row_at(tau_slice_idx[2], _first_window_admitting(1))
+band_row_both = _row_at(tau_slice_idx[2], _first_window_admitting(2))
 
 regime_summary = join(
     ["- `$(REGIMES[k])` (**$(REGIME_LABELS[k])**): $(regime_counts[k]) / $(n_cond) conditions " *
@@ -761,8 +761,10 @@ Concretely:
 
 The signature difference is visible directly in the slices (panels E and F, tables below):
 along the **window** axis the curves move in flat steps that snap at $(TARGET_LAG),
-$(STALE_LAGS[1]) and $(STALE_LAGS[2]) ms; along the **τ** axis the same quantities move as
-smooth sigmoids with no discontinuity anywhere.
+$(STALE_LAGS[1]) and $(STALE_LAGS[2]) ms; along the **τ** axis the quantities move along
+smooth curves with no discontinuity. Leakage rises monotonically as stale mass catches up,
+while target share is unimodal: it first rises as the target survives decay, then falls once
+the stale spikes retain enough mass to compete.
 
 ## Contrary / unexpected findings (kept, not tuned away)
 
@@ -799,11 +801,11 @@ parameter.
 
 ### Fixed τ = $(TAUS[tau_slice_idx[2]]) ms — sweeping the window (medium memory)
 
-$(slice_table_over_windows(tau_slice_idx[2]))
+$(_slice_table_over_windows(tau_slice_idx[2]))
 
 ### Fixed window = $(WINDOWS[window_slice_idx[3]]) ms — sweeping τ (window wide enough for everything)
 
-$(slice_table_over_taus(window_slice_idx[3]))
+$(_slice_table_over_taus(window_slice_idx[3]))
 
 Panels E and F plot these plus τ = $(TAUS[tau_slice_idx[1]]) / $(TAUS[tau_slice_idx[3]]) ms
 and window = $(WINDOWS[window_slice_idx[1]]) / $(WINDOWS[window_slice_idx[2]]) ms. Every row
@@ -820,7 +822,7 @@ above is a verbatim row of `metrics.csv`.
   - **C** the same leakage with the hard gate off (τ only) — B's counterfactual
   - **D** regime map, with the top-1-correct boundary outlined
   - **E** slice at fixed τ, sweeping the window — flat steps at the event lags
-  - **F** slice at fixed window, sweeping τ — smooth sigmoids, no discontinuity
+  - **F** slice at fixed window, sweeping τ — smooth leakage and unimodal target-share curves
 
 ## Reproduce
 
