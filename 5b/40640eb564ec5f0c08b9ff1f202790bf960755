@@ -1,0 +1,25 @@
+experiments/results/memory_gate/summary.md
+  s_ebc1d418c6d797::t_45ac358837cc43 171-174
+  s_ebc1d418c6d797::t_64868f2664788f 284
+experiments/memory_gate.jl
+  s_ebc1d418c6d797::t_e9fc2ab71e391e 825
+  s_ebc1d418c6d797::t_f79c3c5a93c351 588,764-767
+  s_ebc1d418c6d797::t_6233481b30abbb 338,343-344,346,357,363,371,382-383,392,408,412,416,420,424,428,432,437,452,528,533,543,548,589-590,804,808
+  s_ebc1d418c6d797::t_7dd1903846ba14 95,100,102-105,107-108,115,121-122,128,135,138,145,151,185-186,199-203,219-220,222-223,232,234,238-240,245,249,264-265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5b40640eb564ec5f0c08b9ff1f202790bf960755",
+  "prompts": {},
+  "sessions": {
+    "s_ebc1d418c6d797": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05488-c8c5-74a1-974e-d57e30a6da65",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
