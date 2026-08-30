@@ -12,7 +12,7 @@ scheduler, or event-loop API.
 - neurons: 6
 - buffer window: 0.35 s (also bounds `|dt|` inside the kernel)
 - τ: 0.1 s
-- sampled every 0.02 s from 0.0 s to 4.8 s (241 timesteps)
+- sampled every 0.02 s from 0.0 s to 4.8 s (242 timesteps)
 - 4 phases of 1.2 s, spotlighting neurons 2, 5, 3, 6
 - 118 recorded events (56 pattern, 62 background)
 
@@ -23,7 +23,7 @@ scheduler, or event-loop API.
 | 1 | 2 | 0.14 | 1.34 | 61 |
 | 2 | 5 | 1.36 | 2.54 | 60 |
 | 3 | 3 | 2.56 | 3.72 | 59 |
-| 4 | 6 | 3.74 | 4.80 | 54 |
+| 4 | 6 | 3.74 | 4.80 | 55 |
 
 3 spotlight handoff(s):
 
@@ -35,9 +35,9 @@ scheduler, or event-loop API.
 
 - peak retained source events: 5
 - peak retained context events: 6
-- steps where `prune!` dropped at least one event: 106 of 241
+- steps where `prune!` dropped at least one event: 106 of 242
 - total events pruned across the replay: 110
-- steps with a non-zero attention peak: 234 of 241
+- steps with a non-zero attention peak: 235 of 242
 
 ## Artifacts
 

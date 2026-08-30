@@ -67,7 +67,7 @@ _csv_field(x::Bool) = x ? "true" : "false"
 _csv_field(x::AbstractFloat) = string(x)
 function _csv_field(x)
     s = string(x)
-    return any(c -> c in (',', '"', '\n'), s) ? '"' * replace(s, '"' => "\"\"") * '"' : s
+    return any(c -> c in (',', '"', '\n', '\r'), s) ? '"' * replace(s, '"' => "\"\"") * '"' : s
 end
 
 """

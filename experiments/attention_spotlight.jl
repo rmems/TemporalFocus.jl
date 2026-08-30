@@ -154,9 +154,13 @@ function build_stream(cfg)
         t = Float32(tick) * cfg.background_period + _jitter(1_000 + tick, cfg.jitter)
         (0.0f0 <= t && t + cfg.background_lag <= cfg.t_end) || continue
         neuron = 1 + mod(tick, cfg.n_neurons)
-        if neuron == dominant_neuron(cfg, t)
+        dominant_context = dominant_neuron(cfg, t)
+        dominant_source = dominant_neuron(cfg, t + cfg.background_lag)
+        for _ in 1:cfg.n_neurons
+            neuron != dominant_context && neuron != dominant_source && break
             neuron = 1 + mod(neuron, cfg.n_neurons)
         end
+        neuron != dominant_context && neuron != dominant_source || continue
         push!(events, ReplayEvent(t, neuron, cfg.background_value, :context, :background))
         push!(events, ReplayEvent(t + cfg.background_lag, neuron, cfg.background_value,
                                   :source, :background))
@@ -223,10 +227,8 @@ function sample_times(cfg)
     # exact multiples of the step (4.8f0 / 0.02f0 is not exactly 240).
     n_grid = floor(Int, cfg.t_end / cfg.sample_dt + 1.0f-4)
     times = Float32[min(Float32(step) * cfg.sample_dt, cfg.t_end) for step in 0:max(n_grid, 1)]
-    if cfg.t_end - last(times) > 1.0f-5
+    if last(times) != cfg.t_end
         push!(times, cfg.t_end)
-    else
-        times[end] = cfg.t_end
     end
     return times
 end
