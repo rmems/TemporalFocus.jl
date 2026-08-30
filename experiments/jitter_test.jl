@@ -764,8 +764,9 @@ function _summary_continuous(io, rows, summaries)
     classes.overlap > 0 && println(io, @sprintf("- **Overlap (%d configurations).** These exhibit some window-boundary collapse at one or more scales and also a separate steep active-output reordering step; assigning them to a single bucket would hide one mechanism.", classes.overlap))
     println(io)
     println(io, "The honest statement is therefore narrower than \"narrow windows fail abruptly\". A narrow window is the only ",
-        "thing that produces *collapse*, but a short τ produces an equally sharp *reordering* at every window width, ",
-        "including the widest. ",
+        "thing that produces *collapse*, but a short τ produces steep *reordering* at the measured windows in {",
+        join(_grid_set(classes.steep_windows), ", "), "}, including the widest. At window 0.10, the paired-seed ",
+        "threshold identifies collapse without a separate steep active-output reordering. ",
         "Panel C of `figure.png` shows both shapes on one axis, with dotted lines marking collapse rate.")
     println(io)
     _summary_widest_window(io, rows)

@@ -72,7 +72,7 @@ Of the 34 continuous configurations that start out selecting the target, **18 de
 - **Window-boundary collapse (6 configurations, at window ∈ {0.10}).** Jitter pushes the target's context spikes past `|Δt| ≤ window`, the kernel admits no pairs at all, and attention goes to exactly zero — there is no second-best neuron to fall back on. This only happens for windows comparable to the target's 0.04 alignment error.
 - **Steep active-output reordering (10 configurations, at τ ∈ {0.05, 0.10} and window ∈ {0.25, 0.50, 1.00, 2.00, 4.00}).** At least half of the same paired seeds switch directly from correct-and-active to wrong-and-active in one jitter step, so this count cannot be inflated by different seeds entering and leaving collapse while the aggregate collapse rate stays flat.
 
-The honest statement is therefore narrower than "narrow windows fail abruptly". A narrow window is the only thing that produces *collapse*, but a short τ produces an equally sharp *reordering* at every window width, including the widest. Panel C of `figure.png` shows both shapes on one axis, with dotted lines marking collapse rate.
+The honest statement is therefore narrower than "narrow windows fail abruptly". A narrow window is the only thing that produces *collapse*, but a short τ produces steep *reordering* at the measured windows in {0.25, 0.50, 1.00, 2.00, 4.00}, including the widest. At window 0.10, the paired-seed threshold identifies collapse without a separate steep active-output reordering. Panel C of `figure.png` shows both shapes on one axis, with dotted lines marking collapse rate.
 
 ### Where the widest window stops being a no-op
 
