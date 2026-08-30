@@ -182,7 +182,7 @@ _has_artifacts(r::ResultSet) =
     r.figure_path !== nothing || r.summary_path !== nothing ||
     !isempty(r.extra_figures)
 
-_existing(path) = isfile(path) ? path : nothing
+_existing(path) = isfile(path) && !islink(path) ? path : nothing
 
 """
     _read_config(path) -> (config, error_message)
@@ -231,14 +231,16 @@ recorded, else the commit that last changed the result directory, else none.
 function _collect_result(results_dir::AbstractString, slug::AbstractString;
                         repo_root::AbstractString = _default_repo_root())
     dir = joinpath(results_dir, slug)
-    config_path = _existing(joinpath(dir, "config.toml"))
-    figure = _existing(joinpath(dir, "figure.png"))
+    safe_dir = isdir(dir) && !islink(dir)
+    artifact(name) = safe_dir ? _existing(joinpath(dir, name)) : nothing
+    config_path = artifact("config.toml")
+    figure = artifact("figure.png")
     extras = String[]
-    if isdir(dir)
+    if safe_dir
         for name in sort(readdir(dir))
             name == "figure.png" && continue
             path = joinpath(dir, name)
-            if isfile(path) && (endswith(lowercase(name), ".png") ||
+            if isfile(path) && !islink(path) && (endswith(lowercase(name), ".png") ||
                endswith(lowercase(name), ".svg") ||
                endswith(lowercase(name), ".gif"))
                 push!(extras, name)
@@ -257,9 +259,9 @@ function _collect_result(results_dir::AbstractString, slug::AbstractString;
         config,
         config_error,
         config_path,
-        _existing(joinpath(dir, "metrics.csv")),
+        artifact("metrics.csv"),
         figure,
-        _existing(joinpath(dir, "summary.md")),
+        artifact("summary.md"),
         extras,
         commit,
         source,
@@ -276,7 +278,9 @@ directory does not exist (the common case before the experiment wave lands).
 """
 function _discovered_slugs(results_dir::AbstractString)
     isdir(results_dir) || return String[]
-    return sort([name for name in readdir(results_dir) if isdir(joinpath(results_dir, name))])
+    return sort([name for name in readdir(results_dir)
+                 if isdir(joinpath(results_dir, name)) &&
+                    !islink(joinpath(results_dir, name))])
 end
 
 # ---------------------------------------------------------------------------
@@ -363,6 +367,7 @@ function _csv_preview(path::AbstractString; maxrows::Int = 8)
         if isempty(header)
             isempty(strip(record)) && return
             header = _split_csv_line(record)
+            force_malformed && (malformed += 1)
             return
         end
         fields = _split_csv_line(record)
@@ -389,16 +394,31 @@ end
 
 "CommonMark block-quote/list context at the start of one line."
 function _container_context(line::AbstractString)
-    prefix = match(
-        r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*)",
-        line,
-    ).captures[1]
-    lists = count(_ -> true, eachmatch(r"(?:[-*+]|\d+[.)])[ \t]+", prefix))
-    leading = match(r"^[ \t]*", line).match
+    rest = String(line)
+    quotes = 0
+    lists = 0
+    list_indent = 0
+    while !isempty(rest)
+        quote_match = match(r"^[ \t]{0,3}>[ \t]?", rest)
+        if quote_match !== nothing
+            quotes += 1
+            rest = rest[nextind(rest, firstindex(rest), length(quote_match.match)):end]
+            continue
+        end
+        list = match(r"^([ \t]*)(?:[-*+]|\d+[.)])([ \t]+)", rest)
+        list === nothing && break
+        lists += 1
+        list_indent += sum((c == '\t' ? 4 : 1 for c in list.match); init = 0)
+        rest = rest[nextind(rest, firstindex(rest), length(list.match)):end]
+    end
+    leading = match(r"^[ \t]*", rest).match
     indent = sum((c == '\t' ? 4 : 1 for c in leading); init = 0)
-    list_indent = lists == 0 ? 0 : ncodeunits(replace(prefix, r"[ \t]*>[ \t]*" => ""))
-    return (; quotes = count(==('>'), prefix), lists, indent, list_indent)
+    return (; quotes, lists, indent, list_indent)
 end
+
+"Whether a regex-recognized delimiter is a valid CommonMark fence opener."
+_valid_fence_opener(marker::AbstractString, info::AbstractString) =
+    first(marker) != '`' || !occursin('`', info)
 
 "Whether a line remains inside the container where a fenced block opened."
 function _same_container(open, line::AbstractString)
@@ -447,6 +467,11 @@ function _shift_headings(md::AbstractString, shift::Integer)
         if m !== nothing
             prefix, marker, info = m.captures[1], m.captures[2], m.captures[3]
             if fence === nothing
+                if !_valid_fence_opener(marker, info)
+                    println(out, line)
+                    i += 1
+                    continue
+                end
                 fence = marker
                 fence_context = _container_context(prefix)
                 tag = strip(info)
@@ -464,7 +489,10 @@ function _shift_headings(md::AbstractString, shift::Integer)
             continue
         end
         if fence === nothing
-            h = match(r"^( {0,3})(#{1,6})(\s.*)?$", line)
+            h = match(
+                r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]{0,3})(#{1,6})(\s.*)?$",
+                line,
+            )
             if h !== nothing
                 indent, marker, text = h.captures
                 level = min(6, length(marker) + shift)
@@ -506,22 +534,23 @@ Link an artifact at the revision it belongs to. Published results link at their 
 commit, so a versioned gallery page keeps pointing at the evidence it was rendered
 from even after `main` moves on.
 """
-_blob_url(root, path, ref::AbstractString = "main") =
-    string(REPO_URL, "/blob/", ref, "/", _url_path(_rel_path(root, path)))
+_blob_url(root, path, ref::AbstractString = "main"; preserve_escapes::Bool = false) =
+    string(REPO_URL, "/blob/", ref, "/",
+           _url_path(_rel_path(root, path); preserve_escapes))
 
 "Raw-content URL for generated images embedded by a summary."
-_raw_url(root, path, ref::AbstractString = "main") =
+_raw_url(root, path, ref::AbstractString = "main"; preserve_escapes::Bool = false) =
     string("https://raw.githubusercontent.com/rmems/TemporalFocus.jl/", ref, "/",
-           _url_path(_rel_path(root, path)))
+           _url_path(_rel_path(root, path); preserve_escapes))
 
 "Percent-encode a repository-relative path component-wise for an HTTP URL."
-function _url_path(path::AbstractString)
+function _url_path(path::AbstractString; preserve_escapes::Bool = false)
     io = IOBuffer()
     bytes = collect(codeunits(replace(String(path), '\\' => '/')))
     i = 1
     while i <= length(bytes)
         byte = bytes[i]
-        if byte == UInt8('%') && i + 2 <= length(bytes) &&
+        if preserve_escapes && byte == UInt8('%') && i + 2 <= length(bytes) &&
            _is_hex_byte(bytes[i+1]) && _is_hex_byte(bytes[i+2])
             write(io, bytes[i:i+2])
             i += 3
@@ -565,8 +594,8 @@ function _rebase_summary_destination(raw_dest::AbstractString, image::Bool,
     outside = repo_relative == ".." || startswith(repo_relative, "../") ||
               startswith(repo_relative, "..\\")
     outside && return nothing
-    url = image ? _raw_url(root, target, result.ref) :
-          _blob_url(root, target, result.ref)
+    url = image ? _raw_url(root, target, result.ref; preserve_escapes = true) :
+          _blob_url(root, target, result.ref; preserve_escapes = true)
     return string(url, tail === nothing ? "" : tail)
 end
 
@@ -594,8 +623,10 @@ function _summary_code_mask(lines::Vector{<:AbstractString})
         m = match(fence === nothing ? open_fence_pattern : close_fence_pattern, line)
         if fence === nothing
             if m !== nothing
+                marker, info = m.captures[2], m.captures[3]
+                _valid_fence_opener(marker, info) || continue
                 mask[i] = true
-                fence = m.captures[2]
+                fence = marker
                 fence_context = _container_context(m.captures[1])
             elseif match(indented_pattern, line) !== nothing
                 mask[i] = true
@@ -612,18 +643,36 @@ function _summary_code_mask(lines::Vector{<:AbstractString})
     return mask
 end
 
-"Byte-index ranges occupied by complete inline-code spans on one Markdown line."
-function _inline_code_ranges(line::AbstractString)
-    source = String(line)
-    ranges = Tuple{Int,Int}[]
+"Byte-index ranges occupied by complete inline-code spans, including multiline spans."
+function _inline_code_ranges(lines::Vector{<:AbstractString}, block_code::BitVector)
+    ranges = [Tuple{Int,Int}[] for _ in lines]
     opener = nothing
-    for m in eachmatch(r"`+", source)
-        width = ncodeunits(m.match)
-        if opener === nothing
-            opener = (m.offset, width)
-        elseif width == opener[2]
-            push!(ranges, (opener[1], m.offset + width - 1))
+    for (line_number, line) in pairs(lines)
+        if block_code[line_number]
             opener = nothing
+            continue
+        end
+        source = String(line)
+        for m in eachmatch(r"`+", source)
+            width = ncodeunits(m.match)
+            if opener === nothing
+                opener = (line_number, m.offset, width)
+            elseif width == opener[3]
+                start_line, start_offset, _ = opener
+                if start_line == line_number
+                    push!(ranges[line_number],
+                          (start_offset, m.offset + width - 1))
+                else
+                    push!(ranges[start_line],
+                          (start_offset, ncodeunits(String(lines[start_line]))))
+                    for inner in (start_line + 1):(line_number - 1)
+                        isempty(lines[inner]) ||
+                            push!(ranges[inner], (1, ncodeunits(String(lines[inner]))))
+                    end
+                    push!(ranges[line_number], (1, m.offset + width - 1))
+                end
+                opener = nothing
+            end
         end
     end
     return ranges
@@ -636,28 +685,123 @@ function _overlaps_ranges(m::RegexMatch, ranges::Vector{Tuple{Int,Int}})
     return any(first <= stop && last >= start for (start, stop) in ranges)
 end
 
+_overlaps_ranges(first::Int, last::Int, ranges::Vector{Tuple{Int,Int}}) =
+    any(first <= stop && last >= start for (start, stop) in ranges)
+
+"Parse inline Markdown links with arbitrarily nested balanced destinations."
+function _inline_link_spans(source::String)
+    spans = NamedTuple[]
+    pattern = r"(!?\[[^\]\n]*\])\("
+    accepted_through = 0
+    for m in eachmatch(pattern, source)
+        m.offset <= accepted_through && continue
+        label = m.captures[1]
+        isempty(m.match) && continue
+        cursor = nextind(source, m.offset, length(m.match))
+        cursor > lastindex(source) && continue
+        destination_start = cursor
+        destination_stop = nothing
+        suffix_start = nothing
+        close = nothing
+        if source[cursor] == '<'
+            cursor = nextind(source, cursor)
+            escaped = false
+            while cursor <= lastindex(source)
+                c = source[cursor]
+                if escaped
+                    escaped = false
+                elseif c == '\\'
+                    escaped = true
+                elseif c == '>'
+                    destination_stop = cursor
+                    cursor = nextind(source, cursor)
+                    suffix_start = cursor
+                    break
+                end
+                cursor = nextind(source, cursor)
+            end
+            destination_stop === nothing && continue
+        else
+            depth = 0
+            escaped = false
+            while cursor <= lastindex(source)
+                c = source[cursor]
+                if escaped
+                    escaped = false
+                elseif c == '\\'
+                    escaped = true
+                elseif c == '('
+                    depth += 1
+                elseif c == ')'
+                    if depth == 0
+                        destination_stop = prevind(source, cursor)
+                        close = cursor
+                        break
+                    end
+                    depth -= 1
+                elseif isspace(c) && depth == 0
+                    destination_stop = prevind(source, cursor)
+                    suffix_start = cursor
+                    break
+                end
+                cursor = nextind(source, cursor)
+            end
+        end
+        destination_stop === nothing && continue
+        if close === nothing
+            title_quote = nothing
+            escaped = false
+            while cursor <= lastindex(source)
+                c = source[cursor]
+                if escaped
+                    escaped = false
+                elseif c == '\\'
+                    escaped = true
+                elseif title_quote === nothing && (c == '"' || c == '\'')
+                    title_quote = c
+                elseif title_quote !== nothing && c == title_quote
+                    title_quote = nothing
+                elseif title_quote === nothing && c == ')'
+                    close = cursor
+                    break
+                end
+                cursor = nextind(source, cursor)
+            end
+        end
+        close === nothing && continue
+        raw_dest = destination_stop < destination_start ? "" :
+                   String(SubString(source, destination_start, destination_stop))
+        suffix = suffix_start === nothing || suffix_start == close ? "" :
+                 String(SubString(source, suffix_start, prevind(source, close)))
+        push!(spans, (; first = m.offset, last = close, label, raw_dest, suffix))
+        accepted_through = close
+    end
+    return spans
+end
+
 "Rebase inline links and one reference definition on a non-code line."
 function _rebase_summary_line(line::AbstractString, image_labels::Set{String},
-                              result::ResultSet, root::AbstractString)
+                              result::ResultSet, root::AbstractString,
+                              code_ranges::Vector{Tuple{Int,Int}})
     source = String(line)
-    code_ranges = _inline_code_ranges(source)
-    pattern = r"(!?\[[^\]\n]*\])\((<[^>\n]*>|(?:[^()\s]+|\([^()\n]*\))+)([^)]*)\)"
     out = IOBuffer()
     cursor = firstindex(source)
-    for m in eachmatch(pattern, source)
-        m.offset > cursor && print(out, SubString(source, cursor, prevind(source, m.offset)))
-        label, raw_dest, suffix = m.captures
-        replacement = m.match
-        if !_overlaps_ranges(m, code_ranges)
+    for span in _inline_link_spans(source)
+        span.first > cursor &&
+            print(out, SubString(source, cursor, prevind(source, span.first)))
+        replacement = String(SubString(source, span.first, span.last))
+        if !_overlaps_ranges(span.first, span.last, code_ranges)
             rebased = _rebase_summary_destination(
-                raw_dest, startswith(label, "!"), result, root)
+                span.raw_dest, startswith(span.label, "!"), result, root)
             if rebased !== nothing
-                destination = startswith(raw_dest, '<') ? string("<", rebased, ">") : rebased
-                replacement = string(label, "(", destination, suffix, ")")
+                destination = startswith(span.raw_dest, '<') ?
+                              string("<", rebased, ">") : rebased
+                replacement = string(
+                    span.label, "(", destination, span.suffix, ")")
             end
         end
         print(out, replacement)
-        cursor = nextind(source, m.offset, length(m.match))
+        cursor = nextind(source, span.last)
     end
     cursor <= lastindex(source) && print(out, SubString(source, cursor, lastindex(source)))
     rewritten = String(take!(out))
@@ -679,25 +823,25 @@ function _rebase_summary_links(md::AbstractString, result::ResultSet, root::Abst
     source = String(md)
     lines = split(source, '\n'; keepempty = true)
     code = _summary_code_mask(lines)
+    inline_code = _inline_code_ranges(lines, code)
     image_labels = Set{String}()
     for (i, line) in pairs(lines)
         code[i] && continue
-        inline_code = _inline_code_ranges(line)
         for m in eachmatch(r"!\[[^\]\n]*\]\[([^\]\n]+)\]", line)
-            _overlaps_ranges(m, inline_code) && continue
+            _overlaps_ranges(m, inline_code[i]) && continue
             push!(image_labels, _reference_label(m.captures[1]))
         end
         for m in eachmatch(r"!\[([^\]\n]+)\]\[\]", line)
-            _overlaps_ranges(m, inline_code) && continue
+            _overlaps_ranges(m, inline_code[i]) && continue
             push!(image_labels, _reference_label(m.captures[1]))
         end
         for m in eachmatch(r"!\[([^\]\n]+)\](?![\[(])", line)
-            _overlaps_ranges(m, inline_code) && continue
+            _overlaps_ranges(m, inline_code[i]) && continue
             push!(image_labels, _reference_label(m.captures[1]))
         end
     end
     rewritten = [code[i] ? String(line) :
-                 _rebase_summary_line(line, image_labels, result, root)
+                 _rebase_summary_line(line, image_labels, result, root, inline_code[i])
                  for (i, line) in pairs(lines)]
     return join(rewritten, '\n')
 end

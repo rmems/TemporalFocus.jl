@@ -793,6 +793,29 @@ using Random
             @test !occursin("/blob/$(artifact_sha)/", page)
         end
 
+        @testset "symlinked artifacts are not published as pinned evidence" begin
+            root = mktempdir()
+            results = joinpath(root, "experiments", "results")
+            slug = first(Gal.ENTRIES).slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(dir, "config.toml"), "seed = 1\n")
+            outside = joinpath(root, "outside.png")
+            write(outside, "mutable bytes")
+            symlink(outside, joinpath(dir, "figure.png"))
+
+            res, page, assets = _build(results; repo_root = root)
+
+            @test res.published == [slug]
+            @test occursin("No `figure.png` was emitted", page)
+            @test !ispath(joinpath(assets, slug, "figure.png"))
+
+            linked_slug = Gal.ENTRIES[2].slug
+            symlink(dir, joinpath(results, linked_slug); dir_target = true)
+            res, _, _ = _build(results; repo_root = root)
+            @test !(linked_slug in res.published)
+        end
+
         @testset "unusable commit values are not published as provenance" begin
             results = joinpath(mktempdir(), "results")
             slug = first(Gal.ENTRIES).slug
@@ -900,6 +923,20 @@ using Random
             @test !occursin("```@eval", list_exit)
             @test count("```text", list_exit) == 2
 
+            invalid_backtick_info = Gal._shift_headings(
+                "```text`literal\n```@eval\nerror(\"must not run\")\n```\n",
+                4,
+            )
+            @test occursin("```text`literal", invalid_backtick_info)
+            @test !occursin("```@eval", invalid_backtick_info)
+
+            container_headings = Gal._shift_headings(
+                "> # Quoted result\n- ## Listed detail\n",
+                4,
+            )
+            @test occursin("> ##### Quoted result", container_headings)
+            @test occursin("- ###### Listed detail", container_headings)
+
             setext = Gal._shift_headings("Result\n======\n\nDetail\n------\n", 4)
             @test occursin("##### Result", setext)
             @test occursin("###### Detail", setext)
@@ -924,18 +961,22 @@ using Random
             write(joinpath(dir, "metrics.csv"), "a\n1\n")
             write(joinpath(dir, "figure.png"), "png")
             write(joinpath(dir, "focus#detail.png"), "png")
+            write(joinpath(dir, "result%20plot.png"), "png")
             write(joinpath(dir, "summary.md"),
                 "[details](metrics.csv) ![plot](figure.png) " *
                 "[spaced](<figures/result plot.png>) " *
                 "[balanced](figures/run(1).png) " *
                 "[escaped](figures/result%20plot.png) " *
+                "[deep](figures/run(a(b)c).png) " *
                 "[web](https://example.com) [local](#result)\n\n" *
                 "[reference][metrics] ![reference plot][figure]\n\n" *
                 "[metrics]: metrics.csv?download=1\n" *
                 "[figure]: <figure.png> \"generated figure\"\n\n" *
                 "![shortcut]\n[shortcut]: figure.png\n\n" *
                 "Literal example: `[inline sample](metrics.csv)`.\n\n" *
+                "Multiline literal: `first line\n[inline continuation](metrics.csv)`\n\n" *
                 "```text\n[code sample](metrics.csv)\n[code-ref]: metrics.csv\n```\n\n" *
+                "> - ```text\n>   [quoted list code](metrics.csv)\n>   ```\n\n" *
                 "    [indented sample](metrics.csv)\n")
 
             _, page, _ = _build(results; repo_root = root)
@@ -947,7 +988,9 @@ using Random
             @test occursin("figures/run%281%29.png)", page)
             @test occursin("figures/result%20plot.png)", page)
             @test !occursin("figures/result%2520plot.png", page)
+            @test occursin("figures/run%28a%28b%29c%29.png)", page)
             @test occursin("focus%23detail.png", page)
+            @test occursin("result%2520plot.png", page)
             @test occursin("[web](https://example.com)", page)
             @test occursin("[local](#result)", page)
             @test occursin("[metrics]: $(Gal.REPO_URL)/blob/main/", page)
@@ -956,8 +999,10 @@ using Random
             @test occursin("figure.png \"generated figure\"", page)
             @test occursin("[shortcut]: https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
             @test occursin("`[inline sample](metrics.csv)`", page)
+            @test occursin("[inline continuation](metrics.csv)`", page)
             @test occursin("[code sample](metrics.csv)", page)
             @test occursin("[code-ref]: metrics.csv", page)
+            @test occursin(">   [quoted list code](metrics.csv)", page)
             @test occursin("    [indented sample](metrics.csv)", page)
         end
 
@@ -994,6 +1039,13 @@ using Random
             write(unterminated, "a,b\n1,\"bad\n2,ok")
             _, _, broken_total, broken = Gal._csv_preview(unterminated)
             @test (broken_total, broken) == (1, 1)
+
+            broken_header = joinpath(mktempdir(), "broken-header.csv")
+            write(broken_header, "name,\"value")
+            header, rows, total, malformed = Gal._csv_preview(broken_header)
+            @test header == ["name", "value"]
+            @test isempty(rows)
+            @test (total, malformed) == (0, 1)
         end
 
         @testset "internal helpers use private names" begin
