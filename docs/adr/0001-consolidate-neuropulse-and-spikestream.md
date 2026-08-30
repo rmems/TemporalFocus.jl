@@ -559,7 +559,7 @@ text moves.
 | 2 | **Regenerate the canonical UUID** per `RELEASING.md` (`Project.toml`, `docs/Project.toml`, `benchmark/Project.toml`, and `Manifest.toml` via `Pkg.resolve()`); atomically update `RELEASING.md`'s UUID-hygiene section so it records the new UUID and no longer instructs a second regeneration | The audit found nothing dependent on `7f3c9f2a-…`; done **before** any import so `v0.2.0` ships the final identity and no consumer migrates twice |
 | 3 | Port SpikeStream feature kernels + `test/fixtures/spike_vectors.json`, `Statistics` inlined; **add spike-stream feature extraction to the Scope lists and naming policy in the same PR** | Frozen fixtures pass unmodified; `[deps]` still empty; boundary and naming text match what `main` now ships |
 | 4 | Add `SpikeTrain` ↔ timestamp adapters + the full edge-case suite from [Precision policy](#precision-policy), including pre-built events with non-finite timestamps and uniform non-unit values | Narrowing-collision and non-finite projection tests fail loudly without their guards and pass with them; every non-unit value requires `ignore_values=true` |
-| 5 | Port `ActivityRegion` + routing kernel, `LinearAlgebra` dropped, generic constants renamed to the decided `ROUTING_*` family, `adapt_leak!` **excluded**; drop `Printf` only if changed diagnostics formatting is accepted, otherwise preserve it; **add the routing kernel to the Scope lists in the same PR**, with the admissible-mutation limits | NeuroPulse's 899-line suite ports and passes (minus `adapt_leak!` tests); boundary text matches what `main` now ships; diagnostics formatting is decided and tested before `Printf` is removed; **and both** `adapt_leak!`'s destination **and** the `spike_density` field-name question are decided — see the gates below |
+| 5 | Port `ActivityRegion` + routing kernel, `LinearAlgebra` dropped, generic constants renamed to the decided `ROUTING_*` family; exclude `adapt_leak!` only when its destination or explicit retirement is decided, otherwise carry it temporarily as deprecated; rename `spike_density` only if accepted, otherwise retain the existing field name; drop `Printf` only if changed diagnostics formatting is accepted, otherwise preserve it; **add the routing kernel to the Scope lists in the same PR**, with the admissible-mutation limits | NeuroPulse's suite ports and passes; `adapt_leak!` tests are omitted only if its removal is decided, otherwise they remain; boundary text matches what `main` now ships; diagnostics formatting is decided and tested before `Printf` is removed; unresolved `adapt_leak!` and field-name decisions use the documented compatibility fallbacks below |
 | 6 | Port deprecated aliases, **preserving each binding's kind** — see below | Function aliases follow the mechanism selected in open question 5 and warn only if wrappers were selected; `LobeState` remains usable in `::`/`isa`; `NERO_ALPHA` remains arithmetic and binds to `ROUTING_ALPHA` |
 | 7 | Consolidated docs pass: README one-sentence lead, `REVIEW.md` checklist, verification of the scoped `Float32` rule landed in step 3, `docs/src/`, and scope tests asserting the exported symbol set | Stated boundary matches shipped code exactly |
 | 8 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); bump to `0.2.0`, update `CHANGELOG.md`, **and update `RELEASING.md`'s first-registration procedure** from v0.1.0 to v0.2.0 (the UUID-hygiene section was already corrected atomically in step 2) | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix |
@@ -576,10 +576,12 @@ provenance and must never be deleted (rmems/.github#3, migration policy 9).
 `adapt_leak!` is a working public function, and issue #53 promises that no repository is
 archived before its supported upgrade path is published. Removing it while its
 destination is still an open question would hand a consumer a migration guide that points
-nowhere. It is therefore a hard gate on three steps:
+nowhere. Step 5 therefore has a compatibility fallback, while release and archive remain
+hard gates:
 
-- **Step 5** (removal) — the destination or an explicit no-successor retirement is decided
-  and recorded in this ADR.
+- **Step 5** (conditional removal) — remove it only when the destination or an explicit
+  no-successor retirement is decided and recorded; otherwise carry it temporarily as a
+  deprecated, documented-as-out-of-scope compatibility function.
 - **Step 8** (`v0.2.0`) — the migration guide either names where to get it, with a working
   reference (a repository and, if it has landed, a version or commit), **or** plainly
   documents the owner's decision to retire it without a successor.
