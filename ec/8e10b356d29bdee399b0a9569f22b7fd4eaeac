@@ -1,0 +1,27 @@
+experiments/results/attention_spotlight/config.toml
+  s_ebc1d418c6d797::t_cfd638fb471d14 12
+experiments/src/ExperimentUtils.jl
+  s_ebc1d418c6d797::t_e7eb05b81ac9df 70
+experiments/results/attention_spotlight/metrics.csv
+  s_ebc1d418c6d797::t_cfd638fb471d14 242-243
+experiments/results/attention_spotlight/summary.md
+  s_ebc1d418c6d797::t_cfd638fb471d14 15,26,38,40
+experiments/attention_spotlight.jl
+  s_ebc1d418c6d797::t_e7eb05b81ac9df 157-160,163,230
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ec8e10b356d29bdee399b0a9569f22b7fd4eaeac",
+  "prompts": {},
+  "sessions": {
+    "s_ebc1d418c6d797": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05488-c8c5-74a1-974e-d57e30a6da65",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
