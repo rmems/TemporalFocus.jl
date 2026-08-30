@@ -996,13 +996,19 @@ using Random
                 "[spaced](<figures/result plot.png>) " *
                 "[balanced](figures/run(1).png) " *
                 "[escaped](figures/result%20plot.png) " *
+                "[escaped punctuation](figures/run\\(1\\).png) " *
+                "[escaped query](figures/name\\?part.png) " *
+                "[escaped fragment](figures/name\\#part.png) " *
                 "[deep](figures/run(a(b)c).png) " *
                 "[web](https://example.com) [local](#result)\n\n" *
                 "[reference][metrics] ![reference plot][figure]\n\n" *
                 "[metrics]: metrics.csv?download=1\n" *
                 "[figure]: <figure.png> \"generated figure\"\n\n" *
+                "> ![container plot][container-figure]\n" *
+                "> [container-figure]: figure.png\n\n" *
                 "![shortcut]\n[shortcut]: figure.png\n\n" *
                 "Literal example: `[inline sample](metrics.csv)`.\n\n" *
+                "Unmatched `` then `[mixed width](metrics.csv)`.\n\n" *
                 "Multiline literal: `first line\n[inline continuation](metrics.csv)`\n\n" *
                 "Paragraph continuation\n    [active continuation](metrics.csv)\n\n" *
                 "```text\n[code sample](metrics.csv)\n[code-ref]: metrics.csv\n```\n\n" *
@@ -1018,6 +1024,10 @@ using Random
             @test occursin("figures/run%281%29.png)", page)
             @test occursin("figures/result%20plot.png)", page)
             @test !occursin("figures/result%2520plot.png", page)
+            @test count("figures/run%281%29.png)", page) >= 2
+            @test occursin("figures/name%3Fpart.png)", page)
+            @test occursin("figures/name%23part.png)", page)
+            @test !occursin("%5C", page)
             @test occursin("figures/run%28a%28b%29c%29.png)", page)
             @test occursin("focus%23detail.png", page)
             @test occursin("result%2520plot.png", page)
@@ -1027,8 +1037,10 @@ using Random
             @test occursin("metrics.csv?download=1", page)
             @test occursin("[figure]: https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
             @test occursin("figure.png \"generated figure\"", page)
+            @test occursin("> [container-figure]: https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
             @test occursin("[shortcut]: https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
             @test occursin("`[inline sample](metrics.csv)`", page)
+            @test occursin("`` then `[mixed width](metrics.csv)`", page)
             @test occursin("[inline continuation](metrics.csv)`", page)
             @test occursin("    [active continuation]($(Gal.REPO_URL)/blob/main/", page)
             @test occursin("[code sample](metrics.csv)", page)
@@ -1085,16 +1097,27 @@ using Random
             @test rows == [["1"], ["2"]]
             @test (total, malformed) == (2, 1)
 
+            invalid_quotes = joinpath(mktempdir(), "invalid-quotes.csv")
+            write(invalid_quotes, "a,b\n1,ba\"d\"\n")
+            header, rows, total, malformed = Gal._csv_preview(invalid_quotes)
+            @test header == ["a", "b"]
+            @test rows == [["1", "ba\"d\""]]
+            @test (total, malformed) == (1, 1)
+
             literal = joinpath(mktempdir(), "literal.csv")
             write(literal, "status,html\n[failed](notes.md),<script>alert(1)</script>\n")
             results = joinpath(mktempdir(), "results")
             dir = joinpath(results, first(Gal.ENTRIES).slug)
             mkpath(dir)
             cp(literal, joinpath(dir, "metrics.csv"))
+            write(joinpath(dir, "config.toml"),
+                "\"note`key\" = \"run `failed` [details](notes.md)\"\n")
             _, page, _ = _build(results)
             @test occursin("` [failed](notes.md) `", page)
             @test occursin("` <script>alert(1)</script> `", page)
             @test !occursin("| [failed](notes.md) |", page)
+            @test occursin("`` note`key ``", page)
+            @test occursin("`` run `failed` [details](notes.md) ``", page)
         end
 
         @testset "internal helpers use private names" begin

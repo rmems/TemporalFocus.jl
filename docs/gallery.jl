@@ -319,11 +319,13 @@ function _flatten_config(cfg::AbstractDict, prefix::AbstractString = "")
     return out
 end
 
-"Split one CSV record, honoring double-quoted fields."
-function _split_csv_line(line::AbstractString)
+"Parse one CSV record, returning fields and whether quote placement is valid."
+function _parse_csv_record(line::AbstractString)
     fields = String[]
     buf = IOBuffer()
     in_quotes = false
+    after_quote = false
+    valid = true
     chars = collect(line)
     i = 1
     while i <= length(chars)
@@ -335,22 +337,33 @@ function _split_csv_line(line::AbstractString)
                     i += 1
                 else
                     in_quotes = false
+                    after_quote = true
                 end
             else
                 print(buf, c)
             end
         elseif c == '"'
-            in_quotes = true
+            if position(buf) == 0 && !after_quote
+                in_quotes = true
+            else
+                valid = false
+                print(buf, c)
+            end
         elseif c == ','
             push!(fields, String(take!(buf)))
+            after_quote = false
         else
+            after_quote && (valid = false)
             print(buf, c)
         end
         i += 1
     end
     push!(fields, String(take!(buf)))
-    return fields
+    return fields, valid && !in_quotes
 end
+
+"Split one CSV record, honoring double-quoted fields."
+_split_csv_line(line::AbstractString) = first(_parse_csv_record(line))
 
 """
     _csv_preview(path; maxrows=8) -> (header, rows, total_rows, malformed_rows)
@@ -365,15 +378,17 @@ function _csv_preview(path::AbstractString; maxrows::Int = 8)
     total = 0
     malformed = 0
     function _take_record(record; force_malformed::Bool = false)
+        fields, valid = _parse_csv_record(record)
         if !header_seen
             header_seen = true
-            header = _split_csv_line(record)
-            (force_malformed || all(isempty ∘ strip, header)) && (malformed += 1)
+            header = fields
+            (force_malformed || !valid || all(isempty ∘ strip, header)) &&
+                (malformed += 1)
             return
         end
-        fields = _split_csv_line(record)
         total += 1
-        (force_malformed || length(fields) != length(header)) && (malformed += 1)
+        (force_malformed || !valid || length(fields) != length(header)) &&
+            (malformed += 1)
         length(rows) < maxrows && push!(rows, fields)
     end
     open(path, "r") do io
@@ -606,12 +621,54 @@ _is_hex_byte(byte::UInt8) = (UInt8('0') <= byte <= UInt8('9')) ||
                             (UInt8('A') <= byte <= UInt8('F')) ||
                             (UInt8('a') <= byte <= UInt8('f'))
 
+"Remove CommonMark backslash escapes from ASCII punctuation in a destination."
+function _unescape_markdown_destination(dest::AbstractString)
+    source = String(dest)
+    out = IOBuffer()
+    cursor = firstindex(source)
+    while cursor <= lastindex(source)
+        c = source[cursor]
+        if c == '\\'
+            following = nextind(source, cursor)
+            if following <= lastindex(source) && isascii(source[following]) &&
+               ispunct(source[following])
+                print(out, source[following])
+                cursor = nextind(source, following)
+                continue
+            end
+        end
+        print(out, c)
+        cursor = nextind(source, cursor)
+    end
+    return String(take!(out))
+end
+
+"Split a destination at its first unescaped query or fragment delimiter."
+function _destination_suffix(dest::AbstractString)
+    source = String(dest)
+    escaped = false
+    for cursor in eachindex(source)
+        c = source[cursor]
+        if escaped
+            escaped = false
+        elseif c == '\\'
+            escaped = true
+        elseif c == '?' || c == '#'
+            before = cursor == firstindex(source) ? "" :
+                     String(SubString(source, firstindex(source), prevind(source, cursor)))
+            return before, String(SubString(source, cursor, lastindex(source)))
+        end
+    end
+    return source, nothing
+end
+
 "True when a Markdown destination already has an absolute or document-local base."
 function _is_absolute_destination(dest::AbstractString)
     isempty(dest) && return true
     startswith(dest, '#') && return true
-    startswith(dest, '/') && return true
-    return match(r"^[A-Za-z][A-Za-z0-9+.-]*:", dest) !== nothing
+    normalized = _unescape_markdown_destination(dest)
+    startswith(normalized, '/') && return true
+    return match(r"^[A-Za-z][A-Za-z0-9+.-]*:", normalized) !== nothing
 end
 
 "Rebase one relative Markdown destination, preserving query strings and fragments."
@@ -620,9 +677,9 @@ function _rebase_summary_destination(raw_dest::AbstractString, image::Bool,
     wrapped = startswith(raw_dest, '<') && endswith(raw_dest, '>')
     dest = wrapped ? raw_dest[2:prevind(raw_dest, lastindex(raw_dest))] : raw_dest
     _is_absolute_destination(dest) && return nothing
-    parts = match(r"^([^?#]*)([?#].*)?$", dest)
-    parts === nothing && return nothing
-    relative, tail = parts.captures
+    relative_raw, tail_raw = _destination_suffix(dest)
+    relative = _unescape_markdown_destination(relative_raw)
+    tail = tail_raw === nothing ? nothing : _unescape_markdown_destination(tail_raw)
     target = normpath(joinpath(dirname(result.summary_path), relative))
     repo_relative = relpath(target, root)
     outside = repo_relative == ".." || startswith(repo_relative, "../") ||
@@ -697,38 +754,57 @@ function _metric_cell(value::AbstractString)
     return string(delimiter, " ", text, " ", delimiter)
 end
 
+"Render a configuration field literally while preserving compact ordinary cells."
+function _config_cell(value::AbstractString)
+    text = _cell(value)
+    widths = [ncodeunits(m.match) for m in eachmatch(r"`+", text)]
+    isempty(widths) && return string('`', text, '`')
+    delimiter = "`"^(maximum(widths) + 1)
+    return string(delimiter, " ", text, " ", delimiter)
+end
+
 "Byte-index ranges occupied by complete inline-code spans, including multiline spans."
 function _inline_code_ranges(lines::Vector{<:AbstractString}, block_code::BitVector)
     ranges = [Tuple{Int,Int}[] for _ in lines]
-    opener = nothing
+    runs = NamedTuple[]
+    function _mark_complete_spans!()
+        cursor = 1
+        while cursor <= length(runs)
+            opener = runs[cursor]
+            closer = findnext(run -> run.width == opener.width, runs, cursor + 1)
+            if closer === nothing
+                cursor += 1
+                continue
+            end
+            closing = runs[closer]
+            if opener.line == closing.line
+                push!(ranges[opener.line],
+                      (opener.offset, closing.offset + closing.width - 1))
+            else
+                push!(ranges[opener.line],
+                      (opener.offset, ncodeunits(String(lines[opener.line]))))
+                for inner in (opener.line + 1):(closing.line - 1)
+                    isempty(lines[inner]) ||
+                        push!(ranges[inner], (1, ncodeunits(String(lines[inner]))))
+                end
+                push!(ranges[closing.line], (1, closing.offset + closing.width - 1))
+            end
+            cursor = closer + 1
+        end
+        empty!(runs)
+    end
     for (line_number, line) in pairs(lines)
         if block_code[line_number]
-            opener = nothing
+            _mark_complete_spans!()
             continue
         end
         source = String(line)
         for m in eachmatch(r"`+", source)
-            width = ncodeunits(m.match)
-            if opener === nothing
-                opener = (line_number, m.offset, width)
-            elseif width == opener[3]
-                start_line, start_offset, _ = opener
-                if start_line == line_number
-                    push!(ranges[line_number],
-                          (start_offset, m.offset + width - 1))
-                else
-                    push!(ranges[start_line],
-                          (start_offset, ncodeunits(String(lines[start_line]))))
-                    for inner in (start_line + 1):(line_number - 1)
-                        isempty(lines[inner]) ||
-                            push!(ranges[inner], (1, ncodeunits(String(lines[inner]))))
-                    end
-                    push!(ranges[line_number], (1, m.offset + width - 1))
-                end
-                opener = nothing
-            end
+            push!(runs, (; line = line_number, offset = m.offset,
+                         width = ncodeunits(m.match)))
         end
     end
+    _mark_complete_spans!()
     return ranges
 end
 
@@ -861,7 +937,7 @@ function _rebase_summary_line(line::AbstractString, image_labels::Set{String},
     rewritten = String(take!(out))
 
     definition = match(
-        r"^([ \t]{0,3}\[([^\]\n]+)\]:[ \t]*)(<[^>\n]*>|[^\s\n]+)([^\n]*)$",
+        r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]{0,3}\[([^\]\n]+)\]:[ \t]*)(<[^>\n]*>|[^\s\n]+)([^\n]*)$",
         rewritten,
     )
     definition === nothing && return rewritten
@@ -970,7 +1046,7 @@ function _render_setup(io::IO, result::ResultSet, root::AbstractString)
     println(io, "| Parameter | Value |")
     println(io, "|---|---|")
     for (key, value) in pairs
-        println(io, "| `", _cell(key), "` | `", _cell(value), "` |")
+        println(io, "| ", _config_cell(key), " | ", _config_cell(value), " |")
     end
     println(io)
 end
@@ -1102,7 +1178,7 @@ function _render_provenance(io::IO, result::ResultSet, root::AbstractString)
         println(io, "| Field | Value |")
         println(io, "|---|---|")
         for (key, value) in prov
-            println(io, "| `", _cell(key), "` | `", _cell(value), "` |")
+            println(io, "| ", _config_cell(key), " | ", _config_cell(value), " |")
         end
         println(io)
     end
