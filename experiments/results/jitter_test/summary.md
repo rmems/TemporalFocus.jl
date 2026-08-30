@@ -67,10 +67,11 @@ A window-boundary failure has a signature the smooth decay does not: total atten
 | 2.00 | 0.10 | 0.2 | 0.62 | 0.50 |
 
 
-Of the 34 continuous configurations that start out selecting the target, **18 degrade gracefully** — no attention collapse, and no single-step retention drop of 50% or more. The rest fail abruptly, by **two distinct mechanisms** that the collapse table alone would not separate:
+Of the 34 continuous configurations that start out selecting the target, **18 degrade gracefully** — no attention collapse and no ≥50-point retention drop while collapse rate stays flat or falls. The remaining configurations exhibit one or both of **two independently measured mechanisms**:
 
 - **Window-boundary collapse (6 configurations, at window ∈ {0.10}).** Jitter pushes the target's context spikes past `|Δt| ≤ window`, the kernel admits no pairs at all, and attention goes to exactly zero — there is no second-best neuron to fall back on. This only happens for windows comparable to the target's 0.04 alignment error.
-- **Steep decay without collapse (10 configurations, at τ ∈ {0.05, 0.10} and window ∈ {0.25, 0.50, 1.00, 2.00, 4.00}).** These keep admitting pairs, so the failure is a reordering rather than a collapse, yet retention still falls by at least 50% in a single grid step. A short τ makes the recency weight sharp enough that one jitter step moves many seeds across the decision boundary at once.
+- **Steep active-output reordering (16 configurations, at τ ∈ {0.05, 0.10, 0.25, 0.50, 1.00, 2.00} and window ∈ {0.10, 0.25, 0.50, 1.00, 2.00, 4.00}).** At the steep step, collapse rate does not rise, so the ≥50-point retention loss comes from active outputs reordering rather than new zero-attention cases. Depending on the configuration, a sharp recency weight or a narrow-window active scene lets one jitter step move many seeds across the decision boundary at once.
+- **Overlap (6 configurations).** These exhibit some window-boundary collapse at one or more scales and also a separate steep active-output reordering step; assigning them to a single bucket would hide one mechanism.
 
 The honest statement is therefore narrower than "narrow windows fail abruptly". A narrow window is the only thing that produces *collapse*, but a short τ produces an equally sharp *reordering* at every window width, including the widest. Panel C of `figure.png` shows both shapes on one axis, with dotted lines marking collapse rate.
 

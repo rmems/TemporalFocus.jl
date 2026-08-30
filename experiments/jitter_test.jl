@@ -680,13 +680,22 @@ function _summary_collapse_table(io, summaries)
     return nothing
 end
 
+"True when retention drops steeply without a simultaneous rise in collapse rate."
+function _has_steep_reordering(retentions, collapse)
+    return any(1:(length(retentions) - 1)) do i
+        retentions[i] - retentions[i+1] >= 0.5 && collapse[i+1] <= collapse[i]
+    end
+end
+
 """
-Classify every continuous configuration that starts out selecting the target as
-degrading gracefully, collapsing at the window boundary, or reordering steeply
-without collapsing.
+Classify the two continuous failure modes independently. A configuration can
+both collapse at one scale and undergo a steep active-output reordering at
+another, so `collapse_windows` and `steep_*` deliberately overlap.
 """
 function _classify_continuous(summaries)
+    eligible = 0
     graceful = 0
+    overlap = 0
     collapse_windows = Float32[]
     steep_taus = Float32[]
     steep_windows = Float32[]
@@ -694,17 +703,25 @@ function _classify_continuous(summaries)
         retentions = _curve(summaries, "continuous", tau, window, :retention)
         collapse = _curve(summaries, "continuous", tau, window, :collapse_rate)
         retentions[1] >= RETENTION_THRESHOLD || continue
-        if maximum(collapse) > 0.0
+        eligible += 1
+        has_collapse = maximum(collapse) > 0.0
+        has_steep_reordering = _has_steep_reordering(retentions, collapse)
+        if has_collapse
             push!(collapse_windows, window)
-        elseif max_step_drop(retentions) >= 0.5
+        end
+        if has_steep_reordering
             push!(steep_taus, tau)
             push!(steep_windows, window)
-        else
+        end
+        if has_collapse && has_steep_reordering
+            overlap += 1
+        elseif !has_collapse && !has_steep_reordering
             graceful += 1
         end
     end
-    return (graceful = graceful, collapse_windows = collapse_windows,
-        steep_taus = steep_taus, steep_windows = steep_windows)
+    return (eligible = eligible, graceful = graceful, overlap = overlap,
+        collapse_windows = collapse_windows, steep_taus = steep_taus,
+        steep_windows = steep_windows)
 end
 
 "Result 3: continuous degradation, separating graceful decay from the two abrupt failure modes."
@@ -719,9 +736,9 @@ function _summary_continuous(io, rows, summaries)
     steep = length(classes.steep_taus)
 
     println(io, @sprintf("Of the %d continuous configurations that start out selecting the target, **%d degrade gracefully** ",
-            classes.graceful + collapsed + steep, classes.graceful),
-        "— no attention collapse, and no single-step retention drop of 50% or more. ",
-        "The rest fail abruptly, by **two distinct mechanisms** that the collapse table alone would not separate:")
+            classes.eligible, classes.graceful),
+        "— no attention collapse and no ≥50-point retention drop while collapse rate stays flat or falls. ",
+        "The remaining configurations exhibit one or both of **two independently measured mechanisms**:")
     println(io)
     println(io, @sprintf("- **Window-boundary collapse (%d configurations, at window ∈ {%s}).** ",
             collapsed, join(_grid_set(classes.collapse_windows), ", ")),
@@ -729,12 +746,13 @@ function _summary_continuous(io, rows, summaries)
         "attention goes to exactly zero — there is no second-best neuron to fall back on. This only happens for windows ",
         @sprintf("comparable to the target's %.2f alignment error.", BASELINE_ALIGNMENT_ERROR))
     if steep > 0
-        println(io, @sprintf("- **Steep decay without collapse (%d configurations, at τ ∈ {%s} and window ∈ {%s}).** ",
+        println(io, @sprintf("- **Steep active-output reordering (%d configurations, at τ ∈ {%s} and window ∈ {%s}).** ",
                 steep, join(_grid_set(classes.steep_taus), ", "), join(_grid_set(classes.steep_windows), ", ")),
-            "These keep admitting pairs, so the failure is a reordering rather than a collapse, yet retention still falls by ",
-            "at least 50% in a single grid step. A short τ makes the recency weight sharp enough that one jitter step moves ",
-            "many seeds across the decision boundary at once.")
+            "At the steep step, collapse rate does not rise, so the ≥50-point retention loss comes from active outputs ",
+            "reordering rather than new zero-attention cases. Depending on the configuration, a sharp recency weight or ",
+            "a narrow-window active scene lets one jitter step move many seeds across the decision boundary at once.")
     end
+    classes.overlap > 0 && println(io, @sprintf("- **Overlap (%d configurations).** These exhibit some window-boundary collapse at one or more scales and also a separate steep active-output reordering step; assigning them to a single bucket would hide one mechanism.", classes.overlap))
     println(io)
     println(io, "The honest statement is therefore narrower than \"narrow windows fail abruptly\". A narrow window is the only ",
         "thing that produces *collapse*, but a short τ produces an equally sharp *reordering* at every window width, ",
