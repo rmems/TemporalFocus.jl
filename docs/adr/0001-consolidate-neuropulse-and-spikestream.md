@@ -111,11 +111,12 @@ activity-routing kernel and spike-stream feature extraction:
 - cross-modal projector weights between SNN and LLM spaces
 - runtime execution, event-loop scheduling, telemetry ingestion, deployment
   supervision, or hardware control
+- distillation
 - finance/HFT semantics
 
-This ADR therefore **supersedes the README bullet "distillation or routing mechanisms"**
-in the not-owned list. The remaining exclusions are unchanged and are strengthened, not
-weakened, by this ADR.
+This ADR therefore **supersedes only the "routing mechanisms" half of the README bullet
+"distillation or routing mechanisms"** in the not-owned list. Distillation and the other
+exclusions remain unchanged and are strengthened, not weakened, by this ADR.
 
 ### Why routing is admissible but the rest is not
 
@@ -577,9 +578,11 @@ archived before its supported upgrade path is published. Removing it while its
 destination is still an open question would hand a consumer a migration guide that points
 nowhere. It is therefore a hard gate on three steps:
 
-- **Step 5** (removal) — the destination is decided and recorded in this ADR.
-- **Step 8** (`v0.2.0`) — the migration guide names where to get it, with a working
-  reference (a repository and, if it has landed, a version or commit).
+- **Step 5** (removal) — the destination or an explicit no-successor retirement is decided
+  and recorded in this ADR.
+- **Step 8** (`v0.2.0`) — the migration guide either names where to get it, with a working
+  reference (a repository and, if it has landed, a version or commit), **or** plainly
+  documents the owner's decision to retire it without a successor.
 - **Step 11** (archive) — the replacement is published, **or** the owner has explicitly
   retired the function with no successor and the guide says so plainly.
 
