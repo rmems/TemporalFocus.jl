@@ -32,8 +32,11 @@ It does not own:
 - transformer dimensions, token embeddings, or gating mechanisms
 - projector weights between SNN and LLM spaces
 - LLM-side fusion logic
+- finance/HFT semantics such as order books, positions, PnL, market data, or trading signals
 
-If a feature requires knowledge of tokens, embeddings, dense attention semantics, model-space projection weights, or synaptic plasticity rules, it belongs outside this repository.
+If a feature requires knowledge of tokens, embeddings, dense attention semantics,
+model-space projection weights, synaptic plasticity rules, or market/trading semantics,
+it belongs outside this repository.
 
 ### Planned scope change
 

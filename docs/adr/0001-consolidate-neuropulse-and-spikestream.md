@@ -471,13 +471,15 @@ stored in a `SpikeEvent`. Downstream that is not a rounding nuisance, it changes
 |---|---|---|
 | `:collisions` *(default)* | narrowing that **merges timestamps that were distinct**, or that exceeds `abs(t) > 2^24` | normal ingest |
 | `:strict` | **any** timestamp that does not round-trip `Float64 → Float32 → Float64` | exact parity with a `Float64` pipeline is required |
-| `:none` | non-finite values only (see below) | the caller has accepted lossy ingest |
+| `:none` | non-finite inputs **or a finite input that narrows to non-finite `Float32`** | the caller has accepted lossy but still finite ingest |
 
 **Non-finite timestamps are rejected in every checked mode.** A `NaN` neither merges two
 distinct timestamps nor exceeds `2^24`, so the collision and magnitude rules alone would
 wave it through — and it then poisons every ISI statistic downstream. `:collisions` and
-`:strict` therefore also reject any non-finite `t`, and even `:none` rejects it: accepting
-lossy ingest is not the same as accepting a value that is not a time.
+`:strict` therefore also reject any non-finite `t`, and even `:none` rejects it. Every
+mode checks the narrowed value too: a finite `Float64` such as `1e40` overflows to
+`Inf32` and must be rejected before constructing a `SpikeEvent`. Accepting lossy ingest
+is not the same as accepting a value that is not a finite representable time.
 
 The default deliberately does **not** promise that ingest is lossless. Ordinary decimal
 values — `0.1`, `0.2` — are altered by narrowing without merging or exceeding `2^24`, so
@@ -516,6 +518,7 @@ Non-negotiable before the SpikeStream source is retired:
 - empty input; single spike; two spikes
 - unsorted input; duplicated timestamps; negative timestamps
 - `NaN` / `Inf` timestamps
+- a finite timestamp that overflows to `Inf32` during narrowing (including under `:none`)
 - **large-magnitude timestamps that collide under `Float32` narrowing** (the hazard above)
 - a value that narrows lossily **without** colliding (e.g. `0.1`): accepted under
   `:collisions`, rejected under `:strict` — pins down exactly what the default promises
@@ -578,11 +581,11 @@ text moves.
 |---|---|---|
 | 1 | **This ADR** — inventory, dispositions, boundary decision | Owner accepts the boundary broadening and the UUID recommendation |
 | 2 | **Regenerate the canonical UUID** per `RELEASING.md` (`Project.toml`, `docs/Project.toml`, `benchmark/Project.toml`, and `Manifest.toml` via `Pkg.resolve()`); atomically update `RELEASING.md`'s UUID-hygiene section so it records the new UUID and no longer instructs a second regeneration | The audit found nothing dependent on `7f3c9f2a-…`; done **before** any import so `v0.2.0` ships the final identity and no consumer migrates twice |
-| 3 | Port SpikeStream feature kernels + `test/fixtures/spike_vectors.json`, `Statistics` inlined; **add spike-stream feature extraction to the Scope lists and naming policy in the same PR** | Frozen fixtures pass unmodified; `[deps]` still empty; boundary and naming text match what `main` now ships |
+| 3 | Port SpikeStream feature kernels + `test/fixtures/spike_vectors.json`, `Statistics` inlined; **add spike-stream feature extraction to the Scope lists and naming policy and scope `REVIEW.md`'s return-type rule to permit derived `Float64` features in the same PR** | Frozen fixtures pass unmodified; `[deps]` still empty; boundary, naming, and reviewer type guidance match what `main` now ships |
 | 4 | Add `SpikeTrain` ↔ timestamp adapters + the full edge-case suite from [Precision policy](#precision-policy), including pre-built events with non-finite timestamps, non-finite buffer `current_time` values, and uniform non-unit values | Narrowing-collision, non-finite projection, and non-finite reference-time tests fail loudly without their guards and pass with them; every non-unit value requires `ignore_values=true` |
 | 5 | Port `ActivityRegion` + routing kernel, `LinearAlgebra` dropped, generic constants renamed to the decided `ROUTING_*` family; exclude `adapt_leak!` only when its destination or explicit retirement is decided, otherwise carry it temporarily as deprecated; rename `spike_density` only if accepted, otherwise retain the existing field name; drop `Printf` only if changed diagnostics formatting is accepted, otherwise preserve it; **add the routing kernel to the Scope lists in the same PR**, with the admissible-mutation limits | NeuroPulse's suite ports and passes; `adapt_leak!` tests are omitted only if its removal is decided, otherwise they remain; boundary text matches what `main` now ships; diagnostics formatting is decided and tested before `Printf` is removed; unresolved `adapt_leak!` and field-name decisions use the documented compatibility fallbacks below |
 | 6 | Port deprecated aliases, **preserving each binding's kind** — see below | Function aliases follow the mechanism selected in open question 5 and warn only if wrappers were selected; `LobeState` remains usable in `::`/`isa`; `NERO_ALPHA` remains arithmetic and binds to `ROUTING_ALPHA` |
-| 7 | Consolidated docs pass: README one-sentence lead, `REVIEW.md` checklist, verification of the scoped `Float32` rule landed in step 3, `docs/src/`, and scope tests asserting the exported symbol set | Stated boundary matches shipped code exactly |
+| 7 | Consolidated docs pass: README one-sentence lead, the full `REVIEW.md` checklist pass (preserving the derived-feature type exception landed in step 3), verification of the scoped `Float32` rule, `docs/src/`, and scope tests asserting the exported symbol set | Stated boundary matches shipped code exactly |
 | 8 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); complete the non-source [artifact disposition ledger](#non-source-artifact-disposition-ledger); bump to `0.2.0`, update `CHANGELOG.md`, **and update `RELEASING.md`'s first-registration procedure** from v0.1.0 to v0.2.0 (the UUID-hygiene section was already corrected atomically in step 2) | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix; every ledger row is complete |
 | 9 | Add redirect READMEs to `NeuroPulse.jl` and `SpikeStream.jl`; update `rmems/kinetic-signals` boundary docs to name `TemporalFocus.jl (spike features)`; land `rmems/Limen-Capital#9`, including its `brain/Project.toml`, README, and `docs/deps.md` updates | *Cross-repo; requires write access to those repos; all source redirects, kinetic-signals boundary updates, and the Limen-Capital dependency/docs migration must land before archiving* |
 | 10 | Migrate/triage open issues (NeuroPulse #40, #14; SpikeStream #27) and open PRs (NeuroPulse #41, SpikeStream #26) per rmems/.github#4 | Every open item has a documented destination |
@@ -672,7 +675,7 @@ its identity exactly once; there is no second transition.
 | Consumer | Today | After v0.2.0 | Break? |
 |---|---|---|---|
 | **TemporalFocus v0.1.0 consumers** | `TemporalFocus` @ `7f3c9f2a-…`, attention API | `TemporalFocus` @ `<canonical>`, same API, plus features + routing | **API: no**, purely additive. **UUID: yes.** The consumer audit, including Git URLs and fixed revisions, found no current consumer pinned to this identity; lack of tags or registration alone would not make a Git package unpinnable. |
-| **NeuroPulse consumers** (`rmems/Limen-Capital`) | `TemporalFocus` @ `b7e4c3f2-…`, `[sources]` → `Limen-Neural/NeuroPulse.jl` @ `40e39206…`; loaded optionally, routing actually vendored | `TemporalFocus` @ `<canonical>`, `[sources]` → `rmems/TemporalFocus.jl` **with `rev` replaced by a consolidated commit (or dropped in favour of the `v0.2.0` tag)**; `update_relevance!` etc. keep working and warn only if wrappers are selected in open question 5, otherwise their deprecation is documentation-only; `adapt_leak!` follows the decided replacement/retirement path or remains temporarily deprecated while that decision is open | **Yes, three:** UUID, source URL, **and the `rev` pin** must change — leaving `rev = "40e39206…"` in place would either fail to resolve or, if history is imported, check out the old NeuroPulse tree and its `b7e4c3f2-…` identity instead of consolidated v0.2.0. Any decided `adapt_leak!` removal adds its documented replacement or explicit retirement; otherwise compatibility is retained temporarily. Low urgency in practice — the `rev` pin is frozen and the load is behind a `try`, so nothing breaks until they choose to de-vendor. |
+| **NeuroPulse consumers** (`rmems/Limen-Capital`) | `TemporalFocus` @ `b7e4c3f2-…`, `[sources]` → `Limen-Neural/NeuroPulse.jl` @ `40e39206…`; loaded optionally, routing actually vendored | `TemporalFocus` @ `<canonical>`, `[sources]` → `rmems/TemporalFocus.jl` **with `rev` replaced by a consolidated commit (or dropped in favour of the `v0.2.0` tag)**; `update_relevance!` etc. keep working and warn only if wrappers are selected in open question 5, otherwise their deprecation is documentation-only; `adapt_leak!` follows the decided replacement/retirement path or remains temporarily deprecated while that decision is open | **Always three:** UUID, source URL, **and the `rev` pin** must change — leaving `rev = "40e39206…"` in place would either fail to resolve or, if history is imported, check out the old NeuroPulse tree. **Conditional breaks:** if question 4 accepts `spike_density → region_spike_rate`, field readers must rename that access; if question 3 accepts changed diagnostics formatting, consumers comparing/parsing `routing_diagnostics` strings must adopt the documented new format. Step 8 records the final decisions and concrete before/after examples. Any decided `adapt_leak!` removal also names its replacement or explicit retirement; otherwise compatibility is retained temporarily. |
 | **SpikeStream consumers** | `SpikeStream` @ `a3c7f1e2-…`, tag `v0.1.0` | `using TemporalFocus` @ `<canonical>`; function names, signatures, and `Float64` return types unchanged | **Yes, one:** package name + UUID. No API change. |
 | **`rmems/kinetic-signals`** (Rust) | Fixture-parity contract with `SpikeStream.jl`, no FFI | Same fixtures, now under `TemporalFocus.jl` | Docs-only. Output ranges are unchanged and remain a contract. |
 
@@ -701,16 +704,18 @@ No repository is archived before its supported upgrade path is published.
    `uuid4()` at step 2, before the consolidated release, so no consumer migrates its
    identity twice — even though it deviates from the literal wording of #53?
 2. **Where does `adapt_leak!` go?** `thalamic-relay`, the `brainstem-daemon` workspace,
-   or `LiquidCortex.jl`? This blocks step 5 under the
-   [removal gate](#gate-adapt_leak-may-not-be-removed-into-a-void); until it is answered,
-   the fallback is to carry the function forward as deprecated rather than drop it.
+   or `LiquidCortex.jl`? This blocks **removal**, not step 5: under the
+   [removal gate](#gate-adapt_leak-may-not-be-removed-into-a-void), an unanswered
+   decision requires step 5 to carry the function forward as deprecated.
 3. **`Printf` vs. zero-dep diagnostics.** Accept a changed `routing_diagnostics` output
-   format to keep `[deps]` empty, or retain `Printf` and keep byte-identical output? Step 5
-   is gated on this decision; until then it must preserve the current formatting path.
+   format to keep `[deps]` empty, or retain `Printf` and keep byte-identical output? This
+   blocks changing the format/removing `Printf`, not step 5; without a decision, step 5
+   preserves the current formatting path and dependency.
 4. **Rename `RegionRouter.spike_density` → `region_spike_rate`?** It is a breaking
-   read-access change for any consumer inspecting router state. This blocks step 5 under
-   the [field-name gate](#gate-the-spike_density-field-name-must-be-settled-before-the-router-lands);
-   the fallback is to port the existing name.
+   read-access change for any consumer inspecting router state. This blocks the rename,
+   not step 5: under the
+   [field-name gate](#gate-the-spike_density-field-name-must-be-settled-before-the-router-lands),
+   an unanswered decision requires step 5 to port the existing name.
 5. **The three *function* aliases as wrapper functions** (real `depwarn`, one extra
    frame) or documentation-only deprecation (zero cost, silent)? The type and constant
    aliases are already settled — they keep their binding kind and are documented, not
