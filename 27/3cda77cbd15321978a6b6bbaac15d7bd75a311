@@ -1,0 +1,27 @@
+experiments/focus_under_fire.jl
+  s_ebc1d418c6d797::t_dc2056dc9c2634 199,567
+  s_ebc1d418c6d797::t_511de42e15fa01 663-666,776-783,807-809
+  s_ebc1d418c6d797::t_0418ff6aedbff9 165,169,186,193,197,203,209,214-216,222,242,270,278,280,288,291,296-297,318,341,343,346,348,350,354,381,387,413,471,483,512,517,529-530,560,571,573,576,580-581,600,602,608-610,615,617,676-678,683-684,696,699-700,721,738-739,743-746,759,765-766,774,799,854-855,922-923,931-933,935,937-938,946,948-949,958
+experiments/Project.toml
+  s_ebc1d418c6d797::t_31d9915b619468 28,33
+  s_ebc1d418c6d797::t_f0e24409a42df7 29-31
+  s_ebc1d418c6d797::t_035bc717e0333d 32
+experiments/results/focus_under_fire/summary.md
+  s_ebc1d418c6d797::t_f157f8a65bdc46 45-48,109-115,313-315
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "273cda77cbd15321978a6b6bbaac15d7bd75a311",
+  "prompts": {},
+  "sessions": {
+    "s_ebc1d418c6d797": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05488-c8c5-74a1-974e-d57e30a6da65",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
