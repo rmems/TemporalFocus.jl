@@ -893,6 +893,13 @@ using Random
             @test !occursin("```@eval", container_exit)
             @test count("```text", container_exit) == 2
 
+            list_exit = Gal._shift_headings(
+                "- ```text\n  literal\n\n```@eval\nerror(\"must not run\")\n```\n",
+                4,
+            )
+            @test !occursin("```@eval", list_exit)
+            @test count("```text", list_exit) == 2
+
             setext = Gal._shift_headings("Result\n======\n\nDetail\n------\n", 4)
             @test occursin("##### Result", setext)
             @test occursin("###### Detail", setext)
@@ -920,6 +927,8 @@ using Random
             write(joinpath(dir, "summary.md"),
                 "[details](metrics.csv) ![plot](figure.png) " *
                 "[spaced](<figures/result plot.png>) " *
+                "[balanced](figures/run(1).png) " *
+                "[escaped](figures/result%20plot.png) " *
                 "[web](https://example.com) [local](#result)\n\n" *
                 "[reference][metrics] ![reference plot][figure]\n\n" *
                 "[metrics]: metrics.csv?download=1\n" *
@@ -935,6 +944,9 @@ using Random
             @test occursin("![plot](https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
             @test occursin("[spaced](<$(Gal.REPO_URL)/blob/main/", page)
             @test occursin("figures/result%20plot.png>)", page)
+            @test occursin("figures/run%281%29.png)", page)
+            @test occursin("figures/result%20plot.png)", page)
+            @test !occursin("figures/result%2520plot.png", page)
             @test occursin("focus%23detail.png", page)
             @test occursin("[web](https://example.com)", page)
             @test occursin("[local](#result)", page)
@@ -973,6 +985,15 @@ using Random
             header, rows, total, malformed = Gal._csv_preview(csv)
             @test (header, rows, total, malformed) ==
                   (["a", "b"], [["1", "2", "unexpected"]], 1, 1)
+
+            single = joinpath(mktempdir(), "single.csv")
+            write(single, "value\n \n")
+            @test Gal._csv_preview(single) == (["value"], [[" "]], 1, 0)
+
+            unterminated = joinpath(mktempdir(), "unterminated.csv")
+            write(unterminated, "a,b\n1,\"bad\n2,ok")
+            _, _, broken_total, broken = Gal._csv_preview(unterminated)
+            @test (broken_total, broken) == (1, 1)
         end
 
         @testset "internal helpers use private names" begin

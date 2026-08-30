@@ -359,15 +359,15 @@ function _csv_preview(path::AbstractString; maxrows::Int = 8)
     rows = Vector{Vector{String}}()
     total = 0
     malformed = 0
-    function _take_record(record)
-        isempty(strip(record)) && return
+    function _take_record(record; force_malformed::Bool = false)
         if isempty(header)
+            isempty(strip(record)) && return
             header = _split_csv_line(record)
             return
         end
         fields = _split_csv_line(record)
         total += 1
-        length(fields) == length(header) || (malformed += 1)
+        (force_malformed || length(fields) != length(header)) && (malformed += 1)
         length(rows) < maxrows && push!(rows, fields)
     end
     open(path, "r") do io
@@ -380,18 +380,32 @@ function _csv_preview(path::AbstractString; maxrows::Int = 8)
             _take_record(pending)
             pending = ""
         end
-        _take_record(pending)  # unterminated quote: publish what is there
+        # A non-empty remainder has unbalanced quotes. Keep it visible in the
+        # preview, but never report the corrupted record as schema-valid.
+        !isempty(pending) && _take_record(pending; force_malformed = true)
     end
     return header, rows, total, malformed
 end
 
-"Block-quote depth in the leading CommonMark container prefix of one line."
-function _blockquote_depth(line::AbstractString)
+"CommonMark block-quote/list context at the start of one line."
+function _container_context(line::AbstractString)
     prefix = match(
         r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*)",
         line,
     ).captures[1]
-    return count(==('>'), prefix)
+    lists = count(_ -> true, eachmatch(r"(?:[-*+]|\d+[.)])[ \t]+", prefix))
+    leading = match(r"^[ \t]*", line).match
+    indent = sum((c == '\t' ? 4 : 1 for c in leading); init = 0)
+    list_indent = lists == 0 ? 0 : ncodeunits(replace(prefix, r"[ \t]*>[ \t]*" => ""))
+    return (; quotes = count(==('>'), prefix), lists, indent, list_indent)
+end
+
+"Whether a line remains inside the container where a fenced block opened."
+function _same_container(open, line::AbstractString)
+    current = _container_context(line)
+    current.quotes >= open.quotes || return false
+    open.lists == 0 && return true
+    return current.lists >= open.lists || current.indent >= open.list_indent
 end
 
 """
@@ -408,7 +422,7 @@ a fenced block.
 function _shift_headings(md::AbstractString, shift::Integer)
     out = IOBuffer()
     fence = nothing  # complete currently open fence delimiter, or nothing
-    fence_quote_depth = 0
+    fence_context = nothing
     open_fence_pattern =
         r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]{0,3})(`{3,}|~{3,})(.*)$"
     close_fence_pattern =
@@ -421,9 +435,9 @@ function _shift_headings(md::AbstractString, shift::Integer)
         # even without an explicit delimiter. Reprocess that first outside line
         # so a generated top-level Documenter directive is neutralized.
         if fence !== nothing && !isempty(strip(line)) &&
-           _blockquote_depth(line) < fence_quote_depth
+           !_same_container(fence_context, line)
             fence = nothing
-            fence_quote_depth = 0
+            fence_context = nothing
             continue
         end
         # CommonMark containers can nest in either order and to arbitrary depth.
@@ -434,7 +448,7 @@ function _shift_headings(md::AbstractString, shift::Integer)
             prefix, marker, info = m.captures[1], m.captures[2], m.captures[3]
             if fence === nothing
                 fence = marker
-                fence_quote_depth = _blockquote_depth(prefix)
+                fence_context = _container_context(prefix)
                 tag = strip(info)
                 first_tag = isempty(tag) ? "" : lowercase(first(split(tag)))
                 (startswith(tag, "@") || first_tag == "jldoctest") && (info = "text")
@@ -443,7 +457,7 @@ function _shift_headings(md::AbstractString, shift::Integer)
                 # A closing fence must use the same character, contain no info
                 # string, and be at least as long as its opening delimiter.
                 marker[1] == fence[1] && length(marker) >= length(fence) &&
-                    isempty(strip(info)) && (fence = nothing; fence_quote_depth = 0)
+                    isempty(strip(info)) && (fence = nothing; fence_context = nothing)
                 println(out, line)
             end
             i += 1
@@ -503,7 +517,16 @@ _raw_url(root, path, ref::AbstractString = "main") =
 "Percent-encode a repository-relative path component-wise for an HTTP URL."
 function _url_path(path::AbstractString)
     io = IOBuffer()
-    for byte in codeunits(replace(String(path), '\\' => '/'))
+    bytes = collect(codeunits(replace(String(path), '\\' => '/')))
+    i = 1
+    while i <= length(bytes)
+        byte = bytes[i]
+        if byte == UInt8('%') && i + 2 <= length(bytes) &&
+           _is_hex_byte(bytes[i+1]) && _is_hex_byte(bytes[i+2])
+            write(io, bytes[i:i+2])
+            i += 3
+            continue
+        end
         unreserved = (UInt8('A') <= byte <= UInt8('Z')) ||
                      (UInt8('a') <= byte <= UInt8('z')) ||
                      (UInt8('0') <= byte <= UInt8('9')) ||
@@ -511,9 +534,14 @@ function _url_path(path::AbstractString)
                      byte == UInt8('~') || byte == UInt8('/')
         unreserved ? write(io, byte) :
         print(io, '%', uppercase(string(byte; base = 16, pad = 2)))
+        i += 1
     end
     return String(take!(io))
 end
+
+_is_hex_byte(byte::UInt8) = (UInt8('0') <= byte <= UInt8('9')) ||
+                            (UInt8('A') <= byte <= UInt8('F')) ||
+                            (UInt8('a') <= byte <= UInt8('f'))
 
 "True when a Markdown destination already has an absolute or document-local base."
 function _is_absolute_destination(dest::AbstractString)
@@ -550,7 +578,7 @@ _reference_label(label::AbstractString) =
 function _summary_code_mask(lines::Vector{<:AbstractString})
     mask = falses(length(lines))
     fence = nothing
-    fence_quote_depth = 0
+    fence_context = nothing
     open_fence_pattern =
         r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]{0,3})(`{3,}|~{3,})(.*)$"
     close_fence_pattern =
@@ -559,16 +587,16 @@ function _summary_code_mask(lines::Vector{<:AbstractString})
         r"^(?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ ]{4}"
     for (i, line) in pairs(lines)
         if fence !== nothing && !isempty(strip(line)) &&
-           _blockquote_depth(line) < fence_quote_depth
+           !_same_container(fence_context, line)
             fence = nothing
-            fence_quote_depth = 0
+            fence_context = nothing
         end
         m = match(fence === nothing ? open_fence_pattern : close_fence_pattern, line)
         if fence === nothing
             if m !== nothing
                 mask[i] = true
                 fence = m.captures[2]
-                fence_quote_depth = _blockquote_depth(m.captures[1])
+                fence_context = _container_context(m.captures[1])
             elseif match(indented_pattern, line) !== nothing
                 mask[i] = true
             end
@@ -577,7 +605,7 @@ function _summary_code_mask(lines::Vector{<:AbstractString})
             if m !== nothing
                 marker, info = m.captures[2], m.captures[3]
                 marker[1] == fence[1] && length(marker) >= length(fence) &&
-                    isempty(strip(info)) && (fence = nothing; fence_quote_depth = 0)
+                    isempty(strip(info)) && (fence = nothing; fence_context = nothing)
             end
         end
     end
@@ -613,7 +641,7 @@ function _rebase_summary_line(line::AbstractString, image_labels::Set{String},
                               result::ResultSet, root::AbstractString)
     source = String(line)
     code_ranges = _inline_code_ranges(source)
-    pattern = r"(!?\[[^\]\n]*\])\((<[^>\n]*>|[^)\s]+)([^)]*)\)"
+    pattern = r"(!?\[[^\]\n]*\])\((<[^>\n]*>|(?:[^()\s]+|\([^()\n]*\))+)([^)]*)\)"
     out = IOBuffer()
     cursor = firstindex(source)
     for m in eachmatch(pattern, source)
