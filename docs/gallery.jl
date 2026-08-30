@@ -408,7 +408,8 @@ function _shift_headings(md::AbstractString, shift::Integer)
             if fence === nothing
                 fence = marker
                 tag = strip(info)
-                startswith(tag, "@") && (info = "text")
+                first_tag = isempty(tag) ? "" : lowercase(first(split(tag)))
+                (startswith(tag, "@") || first_tag == "jldoctest") && (info = "text")
                 println(out, prefix, marker, info)
             else
                 # A closing fence must use the same character, contain no info
@@ -501,42 +502,40 @@ end
 _reference_label(label::AbstractString) =
     lowercase(join(split(strip(String(label))), " "))
 
-"Rebase reference definitions, choosing raw URLs for definitions used by images."
-function _rebase_reference_definitions(md::AbstractString, result::ResultSet,
-                                       root::AbstractString)
-    source = String(md)
-    image_labels = Set{String}()
-    for m in eachmatch(r"!\[[^\]\n]*\]\[([^\]\n]+)\]", source)
-        push!(image_labels, _reference_label(m.captures[1]))
-    end
-    for m in eachmatch(r"!\[([^\]\n]+)\]\[\]", source)
-        push!(image_labels, _reference_label(m.captures[1]))
-    end
-
-    pattern = r"(?m)^([ \t]{0,3}\[([^\]\n]+)\]:[ \t]*)(<[^>\n]*>|[^\s\n]+)([^\n]*)$"
-    out = IOBuffer()
-    cursor = firstindex(source)
-    for m in eachmatch(pattern, source)
-        m.offset > cursor && print(out, SubString(source, cursor, prevind(source, m.offset)))
-        prefix, label, raw_dest, suffix = m.captures
-        image = _reference_label(label) in image_labels
-        rebased = _rebase_summary_destination(raw_dest, image, result, root)
-        if rebased === nothing
-            print(out, m.match)
+"Mark fenced and indented code lines where link-like text must remain literal."
+function _summary_code_mask(lines::Vector{<:AbstractString})
+    mask = falses(length(lines))
+    fence = nothing
+    fence_pattern =
+        r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*)(`{3,}|~{3,})(.*)$"
+    indented_pattern =
+        r"^(?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ ]{4}"
+    for (i, line) in pairs(lines)
+        m = match(fence_pattern, line)
+        if fence === nothing
+            if m !== nothing
+                mask[i] = true
+                fence = m.captures[2]
+            elseif match(indented_pattern, line) !== nothing
+                mask[i] = true
+            end
         else
-            print(out, prefix, rebased, suffix)
+            mask[i] = true
+            if m !== nothing
+                marker, info = m.captures[2], m.captures[3]
+                marker[1] == fence[1] && length(marker) >= length(fence) &&
+                    isempty(strip(info)) && (fence = nothing)
+            end
         end
-        cursor = nextind(source, m.offset, length(m.match))
     end
-    cursor <= lastindex(source) && print(out, SubString(source, cursor, lastindex(source)))
-    return String(take!(out))
+    return mask
 end
 
-"Rebase relative links in an embedded summary to immutable repository evidence."
-function _rebase_summary_links(md::AbstractString, result::ResultSet, root::AbstractString)
-    result.summary_path === nothing && return String(md)
+"Rebase inline links and one reference definition on a non-code line."
+function _rebase_summary_line(line::AbstractString, image_labels::Set{String},
+                              result::ResultSet, root::AbstractString)
+    source = String(line)
     pattern = r"(!?\[[^\]\n]*\])\(([^)\s]+)([^)]*)\)"
-    source = String(md)
     out = IOBuffer()
     cursor = firstindex(source)
     for m in eachmatch(pattern, source)
@@ -552,7 +551,39 @@ function _rebase_summary_links(md::AbstractString, result::ResultSet, root::Abst
         cursor = nextind(source, m.offset, length(m.match))
     end
     cursor <= lastindex(source) && print(out, SubString(source, cursor, lastindex(source)))
-    return _rebase_reference_definitions(String(take!(out)), result, root)
+    rewritten = String(take!(out))
+
+    definition = match(
+        r"^([ \t]{0,3}\[([^\]\n]+)\]:[ \t]*)(<[^>\n]*>|[^\s\n]+)([^\n]*)$",
+        rewritten,
+    )
+    definition === nothing && return rewritten
+    prefix, label, raw_dest, suffix = definition.captures
+    image = _reference_label(label) in image_labels
+    rebased = _rebase_summary_destination(raw_dest, image, result, root)
+    return rebased === nothing ? rewritten : string(prefix, rebased, suffix)
+end
+
+"Rebase relative links in an embedded summary to immutable repository evidence."
+function _rebase_summary_links(md::AbstractString, result::ResultSet, root::AbstractString)
+    result.summary_path === nothing && return String(md)
+    source = String(md)
+    lines = split(source, '\n'; keepempty = true)
+    code = _summary_code_mask(lines)
+    image_labels = Set{String}()
+    for (i, line) in pairs(lines)
+        code[i] && continue
+        for m in eachmatch(r"!\[[^\]\n]*\]\[([^\]\n]+)\]", line)
+            push!(image_labels, _reference_label(m.captures[1]))
+        end
+        for m in eachmatch(r"!\[([^\]\n]+)\]\[\]", line)
+            push!(image_labels, _reference_label(m.captures[1]))
+        end
+    end
+    rewritten = [code[i] ? String(line) :
+                 _rebase_summary_line(line, image_labels, result, root)
+                 for (i, line) in pairs(lines)]
+    return join(rewritten, '\n')
 end
 
 "Abbreviate an object name for display."
@@ -816,13 +847,20 @@ function _render_published(io::IO, result::ResultSet, entry::Union{Nothing,Galle
     println(io, "#### Reproduce")
     println(io)
     script = joinpath(root, "experiments", string(result.slug, ".jl"))
-    println(io, "```bash")
-    if entry !== nothing || isfile(script)
+    runner = joinpath(root, "experiments", "run_all.jl")
+    if isfile(script)
+        println(io, "```bash")
         println(io, "julia --project=experiments experiments/", result.slug, ".jl")
-    else
+        println(io, "```")
+    elseif isfile(runner)
+        println(io, "The per-experiment script is unavailable; use the checked-in aggregate runner:")
+        println(io)
+        println(io, "```bash")
         println(io, "julia --project=experiments experiments/run_all.jl")
+        println(io, "```")
+    else
+        println(io, "No checked-in reproduction script is available for this artifact set.")
     end
-    println(io, "```")
     println(io)
 
     _render_provenance(io, result, root)

@@ -693,6 +693,23 @@ using Random
             @test occursin("No `summary.md` was emitted", page)
             @test occursin("Provenance incomplete", page)
             @test occursin("| Figure | *not emitted* |", page)
+            @test occursin("No checked-in reproduction script is available", page)
+            @test !occursin("experiments/$(slug).jl", page)
+        end
+
+        @testset "published reproduction commands name existing scripts" begin
+            root = mktempdir()
+            results = joinpath(root, "experiments", "results")
+            slug = first(Gal.ENTRIES).slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(dir, "summary.md"), "Result.\n")
+            write(joinpath(root, "experiments", "$(slug).jl"), "# runnable fixture\n")
+
+            _, page, _ = _build(results; repo_root = root)
+
+            @test occursin("julia --project=experiments experiments/$(slug).jl", page)
+            @test !occursin("No checked-in reproduction script is available", page)
         end
 
         @testset "unlisted slugs are still published" begin
@@ -835,6 +852,13 @@ using Random
             @test !occursin("@example", nested)
             @test !occursin("@eval", nested)
 
+            doctest = Gal._shift_headings(
+                "```jldoctest generated\njulia> error(\"must not run\")\n```\n",
+                4,
+            )
+            @test !occursin("```jldoctest", doctest)
+            @test occursin("```text", doctest)
+
             # A shorter delimiter inside a longer fence is content, not a
             # closer. The later directive must still be neutralized.
             mixed_lengths = Gal._shift_headings(
@@ -866,7 +890,9 @@ using Random
                 "[web](https://example.com) [local](#result)\n\n" *
                 "[reference][metrics] ![reference plot][figure]\n\n" *
                 "[metrics]: metrics.csv?download=1\n" *
-                "[figure]: <figure.png> \"generated figure\"\n")
+                "[figure]: <figure.png> \"generated figure\"\n\n" *
+                "```text\n[code sample](metrics.csv)\n[code-ref]: metrics.csv\n```\n\n" *
+                "    [indented sample](metrics.csv)\n")
 
             _, page, _ = _build(results; repo_root = root)
 
@@ -878,6 +904,9 @@ using Random
             @test occursin("metrics.csv?download=1", page)
             @test occursin("[figure]: https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
             @test occursin("figure.png \"generated figure\"", page)
+            @test occursin("[code sample](metrics.csv)", page)
+            @test occursin("[code-ref]: metrics.csv", page)
+            @test occursin("    [indented sample](metrics.csv)", page)
         end
 
         @testset "summary leading indentation is preserved" begin
