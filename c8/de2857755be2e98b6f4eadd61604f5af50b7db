@@ -1,0 +1,21 @@
+experiments/results/memory_gate/summary.md
+  s_ebc1d418c6d797::t_a4604db203fc5f 85-88,97-101,186
+experiments/memory_gate.jl
+  s_ebc1d418c6d797::t_925ecf4c8e92fe 505,594,682-685,779,846
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c8de2857755be2e98b6f4eadd61604f5af50b7db",
+  "prompts": {},
+  "sessions": {
+    "s_ebc1d418c6d797": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05488-c8c5-74a1-974e-d57e30a6da65",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
