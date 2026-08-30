@@ -1,0 +1,23 @@
+docs/adr/0001-consolidate-neuropulse-and-spikestream.md
+  s_ebc1d418c6d797::t_b85a138830a99b 385,388-389
+  s_ebc1d418c6d797::t_ec74a600291673 374-384,386-387
+  s_ebc1d418c6d797::t_0e5861f2f08928 399-401,425-427,539-540
+  s_ebc1d418c6d797::t_ca766abe67003b 579-581,597-598,600-601,604-605
+  s_ebc1d418c6d797::t_f0b0da34d52977 615,628-632,713,741
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "df467487ee981fa962421cc7eaa8057025e8251f",
+  "prompts": {},
+  "sessions": {
+    "s_ebc1d418c6d797": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05488-c8c5-74a1-974e-d57e30a6da65",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
