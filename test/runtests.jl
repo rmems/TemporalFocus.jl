@@ -668,6 +668,11 @@ using Random
             @test occursin("`metadata.commit`", page)
             @test !occursin("Provenance incomplete", page)
             @test occursin("`params.tau`", page)
+            @test Gal._is_provenance_key("metadata.version")
+            @test Gal._is_provenance_key("date")
+            @test !Gal._is_provenance_key("kernel.version")
+            @test !Gal._is_provenance_key("dataset.date")
+            @test !Gal._is_commit_key("kernel.commit")
         end
 
         @testset "partial artifacts degrade honestly" begin
@@ -741,6 +746,29 @@ using Random
             @test !occursin("/blob/$(artifact_sha)/", dirty_page)
         end
 
+        @testset "ignored generated artifacts invalidate git provenance" begin
+            root = mktempdir()
+            run(`git -C $root init -q`)
+            run(`git -C $root config user.email gallery@example.invalid`)
+            run(`git -C $root config user.name Gallery-Test`)
+            results = joinpath(root, "experiments", "results")
+            slug = first(Gal.ENTRIES).slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(root, ".gitignore"), "*.png\n")
+            write(joinpath(dir, "config.toml"), "seed = 1\n")
+            run(`git -C $root add .gitignore experiments/results`)
+            run(`git -C $root commit -qm artifacts`)
+            artifact_sha = readchomp(`git -C $root rev-parse HEAD`)
+            write(joinpath(dir, "figure.png"), "ignored-regeneration")
+
+            _, page, _ = _build(results; repo_root = root)
+
+            @test occursin("Artifact revision incomplete", page)
+            @test occursin("/blob/main/", page)
+            @test !occursin("/blob/$(artifact_sha)/", page)
+        end
+
         @testset "unusable commit values are not published as provenance" begin
             results = joinpath(mktempdir(), "results")
             slug = first(Gal.ENTRIES).slug
@@ -807,6 +835,16 @@ using Random
             @test !occursin("@example", nested)
             @test !occursin("@eval", nested)
 
+            # A shorter delimiter inside a longer fence is content, not a
+            # closer. The later directive must still be neutralized.
+            mixed_lengths = Gal._shift_headings(
+                "````markdown\n```@example\n````\n\n```@eval\n1 + 1\n```\n",
+                4,
+            )
+            @test occursin("```@example", mixed_lengths)
+            @test !occursin("```@eval", mixed_lengths)
+            @test occursin("```text", mixed_lengths)
+
             setext = Gal._shift_headings("Result\n======\n\nDetail\n------\n", 4)
             @test occursin("##### Result", setext)
             @test occursin("###### Detail", setext)
@@ -825,7 +863,10 @@ using Random
             write(joinpath(dir, "figure.png"), "png")
             write(joinpath(dir, "summary.md"),
                 "[details](metrics.csv) ![plot](figure.png) " *
-                "[web](https://example.com) [local](#result)\n")
+                "[web](https://example.com) [local](#result)\n\n" *
+                "[reference][metrics] ![reference plot][figure]\n\n" *
+                "[metrics]: metrics.csv?download=1\n" *
+                "[figure]: <figure.png> \"generated figure\"\n")
 
             _, page, _ = _build(results; repo_root = root)
 
@@ -833,6 +874,23 @@ using Random
             @test occursin("![plot](https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
             @test occursin("[web](https://example.com)", page)
             @test occursin("[local](#result)", page)
+            @test occursin("[metrics]: $(Gal.REPO_URL)/blob/main/", page)
+            @test occursin("metrics.csv?download=1", page)
+            @test occursin("[figure]: https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
+            @test occursin("figure.png \"generated figure\"", page)
+        end
+
+        @testset "summary leading indentation is preserved" begin
+            root = mktempdir()
+            results = joinpath(root, "experiments", "results")
+            slug = first(Gal.ENTRIES).slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(dir, "summary.md"), "\n    first code line\n    second code line\n")
+
+            _, page, _ = _build(results; repo_root = root)
+
+            @test occursin("    first code line\n    second code line", page)
         end
 
         @testset "csv parsing" begin

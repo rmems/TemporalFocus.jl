@@ -111,6 +111,17 @@ const PROVENANCE_KEYS = Set([
     "script", "hostname", "os",
 ])
 
+"Generic provenance names that are meaningful only at top level or in metadata tables."
+const CONTEXTUAL_PROVENANCE_KEYS = Set([
+    "commit", "sha", "revision", "rev", "generated", "timestamp", "date",
+    "version", "script",
+])
+
+"Table names whose nested fields describe a run rather than experiment setup."
+const PROVENANCE_TABLES = Set([
+    "metadata", "provenance", "run", "runtime", "environment",
+])
+
 "Provenance keys that identify the code version a result was produced from."
 const COMMIT_KEYS = ["commit", "git_commit", "commit_sha", "sha", "revision", "rev", "git_rev"]
 
@@ -123,8 +134,16 @@ to `metadata.commit`) is still recognized as recording a code version.
 """
 _leaf_key(flattened::AbstractString) = lowercase(String(last(split(flattened, '.'))))
 
-_is_provenance_key(flattened::AbstractString) = _leaf_key(flattened) in PROVENANCE_KEYS
-_is_commit_key(flattened::AbstractString) = _leaf_key(flattened) in COMMIT_KEYS
+function _is_provenance_key(flattened::AbstractString)
+    parts = lowercase.(String.(split(flattened, '.')))
+    leaf = last(parts)
+    leaf in PROVENANCE_KEYS || return false
+    leaf in CONTEXTUAL_PROVENANCE_KEYS || return true
+    return length(parts) == 1 || any(in(PROVENANCE_TABLES), parts[1:end-1])
+end
+
+_is_commit_key(flattened::AbstractString) =
+    _leaf_key(flattened) in COMMIT_KEYS && _is_provenance_key(flattened)
 
 const REPO_URL = "https://github.com/rmems/TemporalFocus.jl"
 
@@ -375,7 +394,7 @@ a fenced block.
 """
 function _shift_headings(md::AbstractString, shift::Integer)
     out = IOBuffer()
-    fence = nothing  # currently open fence marker, or nothing
+    fence = nothing  # complete currently open fence delimiter, or nothing
     lines = split(md, '\n'; keepempty = true)
     i = 1
     while i <= length(lines)
@@ -387,12 +406,15 @@ function _shift_headings(md::AbstractString, shift::Integer)
         if m !== nothing
             prefix, marker, info = m.captures[1], m.captures[2], m.captures[3]
             if fence === nothing
-                fence = marker[1:1]
+                fence = marker
                 tag = strip(info)
                 startswith(tag, "@") && (info = "text")
                 println(out, prefix, marker, info)
             else
-                marker[1:1] == fence && (fence = nothing)
+                # A closing fence must use the same character, contain no info
+                # string, and be at least as long as its opening delimiter.
+                marker[1] == fence[1] && length(marker) >= length(fence) &&
+                    isempty(strip(info)) && (fence = nothing)
                 println(out, line)
             end
             i += 1
@@ -456,6 +478,60 @@ function _is_absolute_destination(dest::AbstractString)
     return match(r"^[A-Za-z][A-Za-z0-9+.-]*:", dest) !== nothing
 end
 
+"Rebase one relative Markdown destination, preserving query strings and fragments."
+function _rebase_summary_destination(raw_dest::AbstractString, image::Bool,
+                                     result::ResultSet, root::AbstractString)
+    wrapped = startswith(raw_dest, '<') && endswith(raw_dest, '>')
+    dest = wrapped ? raw_dest[2:prevind(raw_dest, lastindex(raw_dest))] : raw_dest
+    _is_absolute_destination(dest) && return nothing
+    parts = match(r"^([^?#]*)([?#].*)?$", dest)
+    parts === nothing && return nothing
+    relative, tail = parts.captures
+    target = normpath(joinpath(dirname(result.summary_path), relative))
+    repo_relative = relpath(target, root)
+    outside = repo_relative == ".." || startswith(repo_relative, "../") ||
+              startswith(repo_relative, "..\\")
+    outside && return nothing
+    url = image ? _raw_url(root, target, result.ref) :
+          _blob_url(root, target, result.ref)
+    return string(url, tail === nothing ? "" : tail)
+end
+
+"Canonicalize a Markdown reference label for case-insensitive matching."
+_reference_label(label::AbstractString) =
+    lowercase(join(split(strip(String(label))), " "))
+
+"Rebase reference definitions, choosing raw URLs for definitions used by images."
+function _rebase_reference_definitions(md::AbstractString, result::ResultSet,
+                                       root::AbstractString)
+    source = String(md)
+    image_labels = Set{String}()
+    for m in eachmatch(r"!\[[^\]\n]*\]\[([^\]\n]+)\]", source)
+        push!(image_labels, _reference_label(m.captures[1]))
+    end
+    for m in eachmatch(r"!\[([^\]\n]+)\]\[\]", source)
+        push!(image_labels, _reference_label(m.captures[1]))
+    end
+
+    pattern = r"(?m)^([ \t]{0,3}\[([^\]\n]+)\]:[ \t]*)(<[^>\n]*>|[^\s\n]+)([^\n]*)$"
+    out = IOBuffer()
+    cursor = firstindex(source)
+    for m in eachmatch(pattern, source)
+        m.offset > cursor && print(out, SubString(source, cursor, prevind(source, m.offset)))
+        prefix, label, raw_dest, suffix = m.captures
+        image = _reference_label(label) in image_labels
+        rebased = _rebase_summary_destination(raw_dest, image, result, root)
+        if rebased === nothing
+            print(out, m.match)
+        else
+            print(out, prefix, rebased, suffix)
+        end
+        cursor = nextind(source, m.offset, length(m.match))
+    end
+    cursor <= lastindex(source) && print(out, SubString(source, cursor, lastindex(source)))
+    return String(take!(out))
+end
+
 "Rebase relative links in an embedded summary to immutable repository evidence."
 function _rebase_summary_links(md::AbstractString, result::ResultSet, root::AbstractString)
     result.summary_path === nothing && return String(md)
@@ -466,30 +542,17 @@ function _rebase_summary_links(md::AbstractString, result::ResultSet, root::Abst
     for m in eachmatch(pattern, source)
         m.offset > cursor && print(out, SubString(source, cursor, prevind(source, m.offset)))
         label, raw_dest, suffix = m.captures
-        wrapped = startswith(raw_dest, '<') && endswith(raw_dest, '>')
-        dest = wrapped ? raw_dest[2:prevind(raw_dest, lastindex(raw_dest))] : raw_dest
         replacement = m.match
-        if !_is_absolute_destination(dest)
-            parts = match(r"^([^?#]*)([?#].*)?$", dest)
-            if parts !== nothing
-                relative, tail = parts.captures
-                target = normpath(joinpath(dirname(result.summary_path), relative))
-                repo_relative = relpath(target, root)
-                outside = repo_relative == ".." || startswith(repo_relative, "../") ||
-                          startswith(repo_relative, "..\\")
-                if !outside
-                    url = startswith(label, "!") ? _raw_url(root, target, result.ref) :
-                          _blob_url(root, target, result.ref)
-                    replacement = string(label, "(", url,
-                        tail === nothing ? "" : tail, suffix, ")")
-                end
-            end
+        rebased = _rebase_summary_destination(
+            raw_dest, startswith(label, "!"), result, root)
+        if rebased !== nothing
+            replacement = string(label, "(", rebased, suffix, ")")
         end
         print(out, replacement)
         cursor = nextind(source, m.offset, length(m.match))
     end
     cursor <= lastindex(source) && print(out, SubString(source, cursor, lastindex(source)))
-    return String(take!(out))
+    return _rebase_reference_definitions(String(take!(out)), result, root)
 end
 
 "Abbreviate an object name for display."
@@ -513,7 +576,10 @@ function _result_commit(root::AbstractString, dir::AbstractString)
         path = relpath(dir, root)
         # `git log` reports only historical state. Refuse to attach that commit to
         # regenerated or edited artifacts that are currently dirty in the worktree.
-        isempty(strip(readchomp(`git -C $root status --porcelain -- $path`))) || return nothing
+        # Include ignored and individually untracked files: an ignored regenerated
+        # artifact must not inherit the commit of an older tracked sibling.
+        isempty(strip(readchomp(`git -C $root status --porcelain --ignored --untracked-files=all -- $path`))) ||
+            return nothing
         sha = readchomp(`git -C $root log -1 --format=%H -- $path`)
         return isempty(sha) ? nothing : sha
     catch
@@ -606,8 +672,10 @@ function _render_result(io::IO, result::ResultSet, root::AbstractString)
         println(io)
         return
     end
-    text = strip(read(result.summary_path, String))
-    if isempty(text)
+    # Leading indentation is Markdown-significant (for example, an indented code
+    # block). Remove only surrounding line terminators, never spaces or tabs.
+    text = strip(read(result.summary_path, String), ['\r', '\n'])
+    if isempty(strip(text))
         println(io, "The generated `summary.md` is empty.")
         println(io)
         return
