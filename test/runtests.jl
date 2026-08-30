@@ -732,6 +732,21 @@ using Random
             @test occursin("Smoke artifact.", page)
         end
 
+        @testset "mirrored figure destinations encode result slugs" begin
+            results = joinpath(mktempdir(), "results")
+            slug = "focus#detail"
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(dir, "figure.png"), "png")
+
+            res, page, assets = _build(results)
+
+            @test res.published == [slug]
+            @test isfile(joinpath(assets, slug, "figure.png"))
+            @test occursin("assets/experiments/focus%23detail/figure.png", page)
+            @test !occursin("assets/experiments/focus#detail/figure.png", page)
+        end
+
         @testset "code provenance and artifact revision are distinct" begin
             root = mktempdir()
             run(`git -C $root init -q`)
@@ -937,6 +952,20 @@ using Random
             @test occursin("> ##### Quoted result", container_headings)
             @test occursin("- ###### Listed detail", container_headings)
 
+            container_setext = Gal._shift_headings(
+                "> Quoted result\n> ======\n\n- Listed detail\n  ------\n",
+                4,
+            )
+            @test occursin("> ##### Quoted result", container_setext)
+            @test occursin("- ###### Listed detail", container_setext)
+
+            continuation_fence = Gal._shift_headings(
+                "- item\n  ```text\n  literal\n\n```@eval\nerror(\"must not run\")\n```\n",
+                4,
+            )
+            @test !occursin("```@eval", continuation_fence)
+            @test count("```text", continuation_fence) == 2
+
             setext = Gal._shift_headings("Result\n======\n\nDetail\n------\n", 4)
             @test occursin("##### Result", setext)
             @test occursin("###### Detail", setext)
@@ -975,6 +1004,7 @@ using Random
                 "![shortcut]\n[shortcut]: figure.png\n\n" *
                 "Literal example: `[inline sample](metrics.csv)`.\n\n" *
                 "Multiline literal: `first line\n[inline continuation](metrics.csv)`\n\n" *
+                "Paragraph continuation\n    [active continuation](metrics.csv)\n\n" *
                 "```text\n[code sample](metrics.csv)\n[code-ref]: metrics.csv\n```\n\n" *
                 "> - ```text\n>   [quoted list code](metrics.csv)\n>   ```\n\n" *
                 "    [indented sample](metrics.csv)\n")
@@ -1000,6 +1030,7 @@ using Random
             @test occursin("[shortcut]: https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
             @test occursin("`[inline sample](metrics.csv)`", page)
             @test occursin("[inline continuation](metrics.csv)`", page)
+            @test occursin("    [active continuation]($(Gal.REPO_URL)/blob/main/", page)
             @test occursin("[code sample](metrics.csv)", page)
             @test occursin("[code-ref]: metrics.csv", page)
             @test occursin(">   [quoted list code](metrics.csv)", page)
@@ -1046,6 +1077,24 @@ using Random
             @test header == ["name", "value"]
             @test isempty(rows)
             @test (total, malformed) == (0, 1)
+
+            blank_header = joinpath(mktempdir(), "blank-header.csv")
+            write(blank_header, "\n1\n2")
+            header, rows, total, malformed = Gal._csv_preview(blank_header)
+            @test header == [""]
+            @test rows == [["1"], ["2"]]
+            @test (total, malformed) == (2, 1)
+
+            literal = joinpath(mktempdir(), "literal.csv")
+            write(literal, "status,html\n[failed](notes.md),<script>alert(1)</script>\n")
+            results = joinpath(mktempdir(), "results")
+            dir = joinpath(results, first(Gal.ENTRIES).slug)
+            mkpath(dir)
+            cp(literal, joinpath(dir, "metrics.csv"))
+            _, page, _ = _build(results)
+            @test occursin("` [failed](notes.md) `", page)
+            @test occursin("` <script>alert(1)</script> `", page)
+            @test !occursin("| [failed](notes.md) |", page)
         end
 
         @testset "internal helpers use private names" begin

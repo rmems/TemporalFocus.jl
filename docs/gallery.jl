@@ -360,14 +360,15 @@ rows without holding them in memory.
 """
 function _csv_preview(path::AbstractString; maxrows::Int = 8)
     header = String[]
+    header_seen = false
     rows = Vector{Vector{String}}()
     total = 0
     malformed = 0
     function _take_record(record; force_malformed::Bool = false)
-        if isempty(header)
-            isempty(strip(record)) && return
+        if !header_seen
+            header_seen = true
             header = _split_csv_line(record)
-            force_malformed && (malformed += 1)
+            (force_malformed || all(isempty ∘ strip, header)) && (malformed += 1)
             return
         end
         fields = _split_csv_line(record)
@@ -390,6 +391,30 @@ function _csv_preview(path::AbstractString; maxrows::Int = 8)
         !isempty(pending) && _take_record(pending; force_malformed = true)
     end
     return header, rows, total, malformed
+end
+
+"Container contexts, carrying list state onto indented continuation lines."
+function _container_contexts(lines::Vector{<:AbstractString})
+    contexts = NamedTuple[]
+    active_list = nothing
+    for line in lines
+        current = _container_context(line)
+        if current.lists > 0
+            active_list = current
+        elseif active_list !== nothing && current.quotes >= active_list.quotes &&
+               (isempty(strip(line)) || current.indent >= active_list.list_indent)
+            current = (;
+                quotes = current.quotes,
+                lists = active_list.lists,
+                indent = current.indent,
+                list_indent = active_list.list_indent,
+            )
+        elseif !isempty(strip(line))
+            active_list = nothing
+        end
+        push!(contexts, current)
+    end
+    return contexts
 end
 
 "CommonMark block-quote/list context at the start of one line."
@@ -421,8 +446,7 @@ _valid_fence_opener(marker::AbstractString, info::AbstractString) =
     first(marker) != '`' || !occursin('`', info)
 
 "Whether a line remains inside the container where a fenced block opened."
-function _same_container(open, line::AbstractString)
-    current = _container_context(line)
+function _same_container(open, current)
     current.quotes >= open.quotes || return false
     open.lists == 0 && return true
     return current.lists >= open.lists || current.indent >= open.list_indent
@@ -448,6 +472,7 @@ function _shift_headings(md::AbstractString, shift::Integer)
     close_fence_pattern =
         r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]*)(`{3,}|~{3,})(.*)$"
     lines = split(md, '\n'; keepempty = true)
+    contexts = _container_contexts(lines)
     i = 1
     while i <= length(lines)
         line = lines[i]
@@ -455,7 +480,7 @@ function _shift_headings(md::AbstractString, shift::Integer)
         # even without an explicit delimiter. Reprocess that first outside line
         # so a generated top-level Documenter directive is neutralized.
         if fence !== nothing && !isempty(strip(line)) &&
-           !_same_container(fence_context, line)
+           !_same_container(fence_context, contexts[i])
             fence = nothing
             fence_context = nothing
             continue
@@ -473,7 +498,7 @@ function _shift_headings(md::AbstractString, shift::Integer)
                     continue
                 end
                 fence = marker
-                fence_context = _container_context(prefix)
+                fence_context = contexts[i]
                 tag = strip(info)
                 first_tag = isempty(tag) ? "" : lowercase(first(split(tag)))
                 (startswith(tag, "@") || first_tag == "jldoctest") && (info = "text")
@@ -501,17 +526,26 @@ function _shift_headings(md::AbstractString, shift::Integer)
                 continue
             end
 
-            # Setext headings are two-line constructs. Convert them to ATX form
-            # before embedding so they nest under the gallery just like `#` headings.
-            if i < length(lines) && match(r"^ {0,3}\S", line) !== nothing
-                underline = match(r"^ {0,3}(=+|-+)[ \t]*$", lines[i+1])
-                if underline !== nothing
-                    base_level = startswith(underline.captures[1], "=") ? 1 : 2
-                    level = min(6, base_level + shift)
-                    println(out, "#"^level, " ", strip(line))
-                    i += 2
-                    continue
-                end
+            # Setext headings are two-line constructs. Parse their container
+            # prefixes separately so block-quoted and listed headings stay nested.
+            content = match(
+                r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]{0,3})(.*)$",
+                line,
+            )
+            underline = i < length(lines) ? match(
+                r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]{0,3})(=+|-+)[ \t]*$",
+                lines[i+1],
+            ) : nothing
+            if content !== nothing && underline !== nothing &&
+               !isempty(strip(content.captures[2])) &&
+               contexts[i].quotes == contexts[i+1].quotes &&
+               contexts[i].lists == contexts[i+1].lists
+                base_level = startswith(underline.captures[2], "=") ? 1 : 2
+                level = min(6, base_level + shift)
+                println(out, content.captures[1], "#"^level, " ",
+                    strip(content.captures[2]))
+                i += 2
+                continue
             end
         end
         println(out, line)
@@ -614,11 +648,20 @@ function _summary_code_mask(lines::Vector{<:AbstractString})
         r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]*)(`{3,}|~{3,})(.*)$"
     indented_pattern =
         r"^(?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ ]{4}"
+    contexts = _container_contexts(lines)
+    indented = false
     for (i, line) in pairs(lines)
         if fence !== nothing && !isempty(strip(line)) &&
-           !_same_container(fence_context, line)
+           !_same_container(fence_context, contexts[i])
             fence = nothing
             fence_context = nothing
+        end
+        if fence === nothing && indented
+            if isempty(strip(line)) || match(indented_pattern, line) !== nothing
+                mask[i] = true
+                continue
+            end
+            indented = false
         end
         m = match(fence === nothing ? open_fence_pattern : close_fence_pattern, line)
         if fence === nothing
@@ -627,9 +670,11 @@ function _summary_code_mask(lines::Vector{<:AbstractString})
                 _valid_fence_opener(marker, info) || continue
                 mask[i] = true
                 fence = marker
-                fence_context = _container_context(m.captures[1])
-            elseif match(indented_pattern, line) !== nothing
+                fence_context = contexts[i]
+            elseif match(indented_pattern, line) !== nothing &&
+                   (i == 1 || isempty(strip(lines[i-1])))
                 mask[i] = true
+                indented = true
             end
         else
             mask[i] = true
@@ -641,6 +686,15 @@ function _summary_code_mask(lines::Vector{<:AbstractString})
         end
     end
     return mask
+end
+
+"Render a CSV field as literal inline code inside a Markdown table cell."
+function _metric_cell(value::AbstractString)
+    text = replace(String(value), "\r\n" => " ", '\n' => ' ', '\r' => ' ')
+    text = replace(text, "|" => "\\|")
+    widths = [ncodeunits(m.match) for m in eachmatch(r"`+", text)]
+    delimiter = "`"^(isempty(widths) ? 1 : maximum(widths) + 1)
+    return string(delimiter, " ", text, " ", delimiter)
 end
 
 "Byte-index ranges occupied by complete inline-code spans, including multiline spans."
@@ -940,7 +994,8 @@ function _render_artifact(io::IO, result::ResultSet, title::AbstractString, root
         println(io)
         return
     end
-    println(io, "![", title, " — generated figure](", assets_rel, "/", result.slug, "/figure.png)")
+    asset_url = _url_path(string(assets_rel, "/", result.slug, "/figure.png"))
+    println(io, "![", title, " — generated figure](", asset_url, ")")
     println(io)
     println(io, "*Generated by the experiment script; source of truth is ",
         "[`", _rel_path(root, result.figure_path), "`](",
@@ -1006,12 +1061,12 @@ function _render_metrics(io::IO, result::ResultSet, root::AbstractString)
             "padded and excess cells are not displayed below.")
         println(io)
     end
-    println(io, "| ", join([_cell(h) for h in header], " | "), " |")
+    println(io, "| ", join([_metric_cell(h) for h in header], " | "), " |")
     println(io, "|", repeat("---|", length(header)))
     for row in rows
         padded = length(row) < length(header) ?
                  vcat(row, fill("", length(header) - length(row))) : row[1:length(header)]
-        println(io, "| ", join([_cell(c) for c in padded], " | "), " |")
+        println(io, "| ", join([_metric_cell(c) for c in padded], " | "), " |")
     end
     println(io)
     if total > length(rows)
