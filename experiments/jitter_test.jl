@@ -308,9 +308,21 @@ end
 _is_nondecreasing(values::AbstractVector{<:Real}) =
     all(i -> values[i] <= values[i+1], 1:length(values)-1)
 
-"True when a curve rises again at some larger jitter scale after falling."
-_has_recovery(values::AbstractVector{<:Real}) =
-    any(i -> values[i+1] > values[i], 1:length(values)-1)
+"True when a curve that starts selected rises again after a preceding drop."
+function _has_recovery(values::AbstractVector{<:Real})
+    isempty(values) && return false
+    values[1] > 0 || return false
+
+    peak = values[1]
+    has_dropped = false
+    for i in 2:length(values)
+        value = values[i]
+        has_dropped |= value < peak
+        has_dropped && value > values[i-1] && return true
+        peak = max(peak, value)
+    end
+    return false
+end
 
 """
     widest_window_agreement(rows) -> NamedTuple
@@ -449,7 +461,7 @@ function build_figure(summaries)
         envelope[end, j] = tolerance_sigma(_curve(summaries, "temporal", tau, NaN32, :retention))
     end
     ax_d = Axis(fig[2, 2];
-        title = "D. Regime map — tolerated jitter σ* before focus changes",
+        title = "D. Regime map — ≥50% retention jitter envelope σ*",
         xlabel = "continuous window", ylabel = "τ",
         xticks = (1:length(columns), columns),
         yticks = (1:length(TAUS), [@sprintf("%.2f", t) for t in TAUS]))
@@ -463,7 +475,8 @@ function build_figure(summaries)
             color = (!isnan(rank) && rank < length(JITTERS) * 0.6) ? :white : :black)
     end
     Colorbar(fig[2, 3]; colormap = :viridis, colorrange = (1.0, Float64(length(JITTERS))),
-        ticks = (xs, _jitter_label.(JITTERS)), label = "tolerated σ* (grey = target never selected)")
+        ticks = (xs, _jitter_label.(JITTERS)),
+        label = "largest σ* with ≥50% retention (grey = target not selected at σ = 0)")
 
     return fig
 end
@@ -538,15 +551,23 @@ function _summary_discrete(io, rows)
     n_shares = length(unique(r.target_share for r in discrete_rows))
     top1s = unique(r.top1 for r in discrete_rows)
 
-    println(io, "## Result 1 — discrete attention is exactly invariant to timestamp jitter")
+    invariant = max_drift == 0.0f0
+    println(io, invariant ?
+        "## Result 1 — discrete attention is exactly invariant to timestamp jitter" :
+        "## Result 1 — discrete attention is not invariant to timestamp jitter")
     println(io)
     println(io, @sprintf("Across all %d discrete rows, spanning every jitter scale up to σ = %.2f and every seed, ",
             length(discrete_rows), maximum(JITTERS)),
-        @sprintf("the maximum L2 drift from the zero-jitter baseline is **%g** — bit-for-bit identical output. ", max_drift),
-        @sprintf("Target attention share is constant at **%.4f** (%d distinct value observed) and top-1 is constant at neuron **%d** (%d distinct value observed).",
-            first(discrete_rows).target_share, n_shares, first(top1s), length(top1s)))
+        invariant ?
+            @sprintf("the maximum L2 drift from the zero-jitter baseline is **%g** — bit-for-bit identical output. ", max_drift) :
+            @sprintf("the maximum L2 drift from the zero-jitter baseline is **%g**, so the outputs differ. ", max_drift),
+        invariant ?
+            @sprintf("Target attention share is constant at **%.4f** (%d distinct value observed) and top-1 is constant at neuron **%d** (%d distinct value observed).",
+                first(discrete_rows).target_share, n_shares, first(top1s), length(top1s)) :
+            @sprintf("Target attention share has **%d** distinct value(s), and top-1 has **%d** distinct value(s).",
+                n_shares, length(top1s)))
     println(io)
-    if max_drift == 0.0f0
+    if invariant
         println(io, "The hypothesis holds: the discrete kernel never reads a timestamp, so timestamp-only ",
             @sprintf("perturbation cannot move it. The cost is that it never selects the target — it selects neuron %d, ", first(top1s)),
             "the neuron with the most coincidence mass, at every jitter scale. Perfect robustness here means the kernel ",
@@ -562,7 +583,7 @@ end
 
 "Result 2: temporal degradation across τ."
 function _summary_temporal(io, summaries, baselines)
-    println(io, "## Result 2 — temporal attention degrades smoothly, and degrades toward the discrete answer")
+    println(io, "## Result 2 — temporal weights vary smoothly, but top-1 retention can fall in cliffs")
     println(io)
     table_rows = Vector{String}[]
     for tau in TAUS
@@ -589,6 +610,11 @@ function _summary_temporal(io, summaries, baselines)
             @sprintf("relative drift at σ = %.2f", maximum(JITTERS)),
             "largest single-step retention drop",
         ], table_rows)
+    largest_drop = maximum(max_step_drop(
+        _curve(summaries, "temporal", tau, NaN32, :retention)) for tau in TAUS)
+    println(io, @sprintf("The exponential weights are smooth functions of timestamp error, but top-1 retention is a discrete decision and is not smooth: the largest sampled one-step retention drop is **%.1f percentage points**. ", 100 * largest_drop),
+        "The curves still move toward the timing-independent discrete answer as τ flattens the recency weighting.")
+    println(io)
     println(io, @sprintf("`σ*` is the largest jitter scale on the grid for which top-1 retention stays at or above %.0f%% ",
             RETENTION_THRESHOLD * 100),
         "for that scale and every smaller one. A dash means the configuration already misses the target at zero jitter.")
@@ -650,6 +676,7 @@ function _summary_collapse_table(io, summaries)
     _markdown_table(io,
         ["τ", "window", "first σ with a collapse", "peak collapse rate", "largest single-step retention drop"],
         table_rows)
+    println(io)
     return nothing
 end
 
@@ -777,20 +804,23 @@ function _summary_drift(io, summaries)
     println(io)
 
     dips = String[]
+    taus_with_dips = 0
     for tau in TAUS
         drifts = _curve(summaries, "temporal", tau, NaN32, :drift_mean)
         _is_nondecreasing(drifts) && continue
-        idx = findfirst(i -> drifts[i+1] < drifts[i], 1:length(drifts)-1)
-        push!(dips, @sprintf("τ = %.2f dips from %.3f at σ = %s to %.3f at σ = %s",
-            tau, drifts[idx], _jitter_label(JITTERS[idx]), drifts[idx+1], _jitter_label(JITTERS[idx+1])))
+        taus_with_dips += 1
+        for idx in findall(i -> drifts[i+1] < drifts[i], 1:length(drifts)-1)
+            push!(dips, @sprintf("τ = %.2f dips from %.3f at σ = %s to %.3f at σ = %s",
+                tau, drifts[idx], _jitter_label(JITTERS[idx]), drifts[idx+1], _jitter_label(JITTERS[idx+1])))
+        end
     end
     if isempty(dips)
         println(io, @sprintf("On this grid the seed-mean drift happens to be non-decreasing in σ for all %d τ values, but that is ", length(TAUS)),
             "an observation about this grid, not a guarantee.")
     else
         println(io, @sprintf("Drift does **not** grow monotonically, though. For %d of the %d τ values the seed-mean drift dips at some ",
-                length(dips), length(TAUS)),
-            "point on the grid (", join(dips, "; "), "). Paired Gaussian perturbations move a spike toward the source time ",
+                taus_with_dips, length(TAUS)),
+            "point on the grid; every observed dip is listed here (", join(dips, "; "), "). Paired Gaussian perturbations move a spike toward the source time ",
             "as readily as away from it, so a larger σ can happen to land a scene closer to the baseline than a smaller one did. ",
             "The claim supported by the data is that drift *starts early*, not that it *rises steadily*.")
     end
@@ -804,12 +834,17 @@ function _summary_caveats(io, summaries)
 
     println(io, "## Honest caveats")
     println(io)
-    println(io, "- The tolerated σ* values are grid-resolved **estimates**, not bounds. They can only take values from the ",
-        "jitter grid in `config.toml`, and retention is not monotone in σ — ",
-        @sprintf("%d of the %d swept configurations regain the target at a larger scale after losing it, ", recoveries, length(_kernel_configs())),
-        "because a Gaussian perturbation can carry a spike back toward the source time. Two passing grid points therefore ",
-        "do not rule out a failure at an unsampled scale between them. Read σ* as \"the largest sampled scale that held\", ",
-        "not as a bound on the continuous threshold.")
+    print(io, "- The tolerated σ* values are grid-resolved **estimates**, not bounds. They can only take values from the ",
+        "jitter grid in `config.toml`. ")
+    if recoveries > 0
+        print(io, @sprintf("For %d of the %d swept configurations that start out selecting the target, retention falls and then rises again at a larger sampled scale, ", recoveries, length(_kernel_configs())),
+            "because a Gaussian perturbation can carry a spike back toward the source time. ")
+    else
+        print(io, "No configuration that starts out selecting the target loses and later regains it on this sampled grid, ",
+            "but sampled monotonicity does not prove monotonicity between grid points. ")
+    end
+    println(io, "Two passing grid points therefore do not rule out a failure at an unsampled scale between them. Read σ* as ",
+        "\"the largest sampled scale that held\", not as a bound on the continuous threshold.")
     println(io, @sprintf("- Retention is averaged over %d seeds, so it is quantized to multiples of %.3f. The %.0f%% threshold is ",
             length(SEEDS), 1 / length(SEEDS), RETENTION_THRESHOLD * 100),
         @sprintf("exactly attainable (%d of %d seeds) and `tolerance_sigma` accepts it, so the %d conditions that land on it ",
@@ -819,7 +854,7 @@ function _summary_caveats(io, summaries)
         "spread. That is by construction: with σ = 0 the perturbation term vanishes and every seed yields the identical scene.")
     println(io, "- Conclusions are tied to this scene. The tolerance numbers scale with the target's baseline alignment ",
         @sprintf("error (%.2f time units here) and with the coincidence-mass gap between the target and the loud distractor. ", BASELINE_ALIGNMENT_ERROR),
-        "The qualitative shapes — flat for discrete, smooth for temporal, cliff-edged for narrow continuous windows — ",
+        "The qualitative shapes — flat for discrete, smooth temporal weights with decision cliffs, and boundary-cliff-edged narrow continuous windows — ",
         "are what should carry over.")
     println(io, "- `randn` draws come from `Random.MersenneTwister`, which is reproducible for a given seed on a given ",
         "Julia version. The recorded seeds reproduce this run exactly on the Julia version noted in `config.toml`.")

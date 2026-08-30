@@ -20,7 +20,7 @@ Across all 73 discrete rows, spanning every jitter scale up to σ = 1.60 and eve
 
 The hypothesis holds: the discrete kernel never reads a timestamp, so timestamp-only perturbation cannot move it. The cost is that it never selects the target — it selects neuron 6, the neuron with the most coincidence mass, at every jitter scale. Perfect robustness here means the kernel reads no timing at all, which is not the same thing as resilience.
 
-## Result 2 — temporal attention degrades smoothly, and degrades toward the discrete answer
+## Result 2 — temporal weights vary smoothly, but top-1 retention can fall in cliffs
 
 | τ | target at σ = 0 | baseline target share | tolerated σ* | retention at σ = 1.60 | relative drift at σ = 1.60 | largest single-step retention drop |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -30,6 +30,8 @@ The hypothesis holds: the discrete kernel never reads a timestamp, so timestamp-
 | 0.50 | yes | 0.522 | 0.8 | 0.25 | 0.786 ± 0.217 | 0.38 |
 | 1.00 | yes | 0.311 | 0.4 | 0.25 | 0.552 ± 0.140 | 0.25 |
 | 2.00 | no | 0.212 | — | 0.12 | 0.335 ± 0.078 | 0.00 |
+
+The exponential weights are smooth functions of timestamp error, but top-1 retention is a discrete decision and is not smooth: the largest sampled one-step retention drop is **62.5 percentage points**. The curves still move toward the timing-independent discrete answer as τ flattens the recency weighting.
 
 `σ*` is the largest jitter scale on the grid for which top-1 retention stays at or above 50% for that scale and every smaller one. A dash means the configuration already misses the target at zero jitter.
 
@@ -64,6 +66,7 @@ A window-boundary failure has a signature the smooth decay does not: total atten
 | 1.00 | 0.10 | 0.2 | 0.62 | 0.50 |
 | 2.00 | 0.10 | 0.2 | 0.62 | 0.50 |
 
+
 Of the 34 continuous configurations that start out selecting the target, **18 degrade gracefully** — no attention collapse, and no single-step retention drop of 50% or more. The rest fail abruptly, by **two distinct mechanisms** that the collapse table alone would not separate:
 
 - **Window-boundary collapse (6 configurations, at window ∈ {0.10}).** Jitter pushes the target's context spikes past `|Δt| ≤ window`, the kernel admits no pairs at all, and attention goes to exactly zero — there is no second-best neuron to fall back on. This only happens for windows comparable to the target's 0.04 alignment error.
@@ -89,14 +92,14 @@ That is the expected behaviour rather than a defect: the scene's largest baselin
 
 Relative L2 drift is already non-zero at the smallest non-zero jitter scale and reaches a sizeable fraction of the baseline norm well before top-1 changes: the attention vector is moving while the selected neuron is still correct. Top-1 stability is the discrete decision boundary; vector drift is the continuous signal that shows the boundary being approached. Reporting either alone would misstate the robustness.
 
-Drift does **not** grow monotonically, though. For 1 of the 6 τ values the seed-mean drift dips at some point on the grid (τ = 0.05 dips from 0.132 at σ = 0.02 to 0.124 at σ = 0.05). Paired Gaussian perturbations move a spike toward the source time as readily as away from it, so a larger σ can happen to land a scene closer to the baseline than a smaller one did. The claim supported by the data is that drift *starts early*, not that it *rises steadily*.
+Drift does **not** grow monotonically, though. For 1 of the 6 τ values the seed-mean drift dips at some point on the grid; every observed dip is listed here (τ = 0.05 dips from 0.132 at σ = 0.02 to 0.124 at σ = 0.05). Paired Gaussian perturbations move a spike toward the source time as readily as away from it, so a larger σ can happen to land a scene closer to the baseline than a smaller one did. The claim supported by the data is that drift *starts early*, not that it *rises steadily*.
 
 ## Honest caveats
 
-- The tolerated σ* values are grid-resolved **estimates**, not bounds. They can only take values from the jitter grid in `config.toml`, and retention is not monotone in σ — 3 of the 43 swept configurations regain the target at a larger scale after losing it, because a Gaussian perturbation can carry a spike back toward the source time. Two passing grid points therefore do not rule out a failure at an unsampled scale between them. Read σ* as "the largest sampled scale that held", not as a bound on the continuous threshold.
+- The tolerated σ* values are grid-resolved **estimates**, not bounds. They can only take values from the jitter grid in `config.toml`. No configuration that starts out selecting the target loses and later regains it on this sampled grid, but sampled monotonicity does not prove monotonicity between grid points. Two passing grid points therefore do not rule out a failure at an unsampled scale between them. Read σ* as "the largest sampled scale that held", not as a bound on the continuous threshold.
 - Retention is averaged over 8 seeds, so it is quantized to multiples of 0.125. The 50% threshold is exactly attainable (4 of 8 seeds) and `tolerance_sigma` accepts it, so the 11 conditions that land on it sit on a literal coin-flip boundary. Any σ* resting on one of those conditions is the weakest evidence in the tables.
 - The zero-jitter baseline is a single deterministic evaluation, not a seed average, so its row has no spread. That is by construction: with σ = 0 the perturbation term vanishes and every seed yields the identical scene.
-- Conclusions are tied to this scene. The tolerance numbers scale with the target's baseline alignment error (0.04 time units here) and with the coincidence-mass gap between the target and the loud distractor. The qualitative shapes — flat for discrete, smooth for temporal, cliff-edged for narrow continuous windows — are what should carry over.
+- Conclusions are tied to this scene. The tolerance numbers scale with the target's baseline alignment error (0.04 time units here) and with the coincidence-mass gap between the target and the loud distractor. The qualitative shapes — flat for discrete, smooth temporal weights with decision cliffs, and boundary-cliff-edged narrow continuous windows — are what should carry over.
 - `randn` draws come from `Random.MersenneTwister`, which is reproducible for a given seed on a given Julia version. The recorded seeds reproduce this run exactly on the Julia version noted in `config.toml`.
 
 ## Reproducing
