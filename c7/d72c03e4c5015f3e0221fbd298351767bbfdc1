@@ -1,0 +1,24 @@
+experiments/jitter_test.jl
+  s_ebc1d418c6d797::t_79280a5a5272c1 311-325,464,478-479,554-557,561-563,570,586,679,807,811-815,822-823,857
+  s_ebc1d418c6d797::t_dd209ecc605520 564-568,837-847
+  s_ebc1d418c6d797::t_32a674577efde1 613-617
+experiments/results/jitter_test/summary.md
+  s_ebc1d418c6d797::t_1c6aeb9bc547b3 23,34-35,69,95,102
+  s_ebc1d418c6d797::t_5ed2fcfcb2c471 99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c7d72c03e4c5015f3e0221fbd298351767bbfdc1",
+  "prompts": {},
+  "sessions": {
+    "s_ebc1d418c6d797": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05488-c8c5-74a1-974e-d57e30a6da65",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Raul Montoya Cardenas <montoyaraul34@gmail.com>"
+    }
+  }
+}
