@@ -656,14 +656,15 @@ no unit semantics are attached, and in particular none are financial.
 - $(n_cond) conditions total.
 
 **Determinism, scoped honestly.** The scene contains no random draws at all (seed
-`$(SEED)` is recorded and applied for contract compliance only). `config.toml`,
-`metrics.csv` and this file are therefore fixed by the code plus the Julia version, and
-re-running reproduces them byte-for-byte. `figure.png` additionally depends on the
-resolved CairoMakie / Cairo / font stack: it is byte-identical on repeated runs **in the
-same resolved environment**, but `experiments/Project.toml` accepts any CairoMakie
-$(CAIROMAKIE_COMPAT) release and no `experiments/Manifest.toml` is committed (that policy
-belongs to the harness issue), so a different resolution or platform may render it
-differently. The versions this run used are recorded in `config.toml`.
+`$(SEED)` is recorded and applied for contract compliance only). `metrics.csv` and this
+file are fixed by the code plus the Julia version. `config.toml` also records the resolved
+CairoMakie version, so its bytes additionally depend on dependency resolution. Re-running
+reproduces all three byte-for-byte **in the same resolved environment**. `figure.png`
+additionally depends on the resolved CairoMakie / Cairo / font stack: it is byte-identical
+on repeated runs in that environment, but `experiments/Project.toml` accepts any
+CairoMakie $(CAIROMAKIE_COMPAT) release and no `experiments/Manifest.toml` is committed
+(that policy belongs to the harness issue), so a different resolution or platform may
+render it differently. The versions this run used are recorded in `config.toml`.
 
 ## Zero and tie handling
 
@@ -812,8 +813,10 @@ $(_slice_table_over_windows(tau_slice_idx[2]))
 $(_slice_table_over_taus(window_slice_idx[3]))
 
 Panels E and F plot these plus τ = $(TAUS[tau_slice_idx[1]]) / $(TAUS[tau_slice_idx[3]]) ms
-and window = $(WINDOWS[window_slice_idx[1]]) / $(WINDOWS[window_slice_idx[2]]) ms. Every row
-above is a verbatim row of `metrics.csv`.
+and window = $(WINDOWS[window_slice_idx[1]]) / $(WINDOWS[window_slice_idx[2]]) ms. The
+tables above are selected-column projections of `metrics.csv`, rounded for readability
+(four decimals for most values and two for ratios); the CSV retains the serialized
+precision.
 
 ## Artifacts
 

@@ -59,14 +59,15 @@ no unit semantics are attached, and in particular none are financial.
 - 625 conditions total.
 
 **Determinism, scoped honestly.** The scene contains no random draws at all (seed
-`20260823` is recorded and applied for contract compliance only). `config.toml`,
-`metrics.csv` and this file are therefore fixed by the code plus the Julia version, and
-re-running reproduces them byte-for-byte. `figure.png` additionally depends on the
-resolved CairoMakie / Cairo / font stack: it is byte-identical on repeated runs **in the
-same resolved environment**, but `experiments/Project.toml` accepts any CairoMakie
-0.15 release and no `experiments/Manifest.toml` is committed (that policy
-belongs to the harness issue), so a different resolution or platform may render it
-differently. The versions this run used are recorded in `config.toml`.
+`20260823` is recorded and applied for contract compliance only). `metrics.csv` and this
+file are fixed by the code plus the Julia version. `config.toml` also records the resolved
+CairoMakie version, so its bytes additionally depend on dependency resolution. Re-running
+reproduces all three byte-for-byte **in the same resolved environment**. `figure.png`
+additionally depends on the resolved CairoMakie / Cairo / font stack: it is byte-identical
+on repeated runs in that environment, but `experiments/Project.toml` accepts any
+CairoMakie 0.15 release and no `experiments/Manifest.toml` is committed
+(that policy belongs to the harness issue), so a different resolution or platform may
+render it differently. The versions this run used are recorded in `config.toml`.
 
 ## Zero and tie handling
 
@@ -271,8 +272,10 @@ parameter.
 | 300 | 0.9737 | 1.5473 | 0.9737 | 1.5473 | 0.2894 | 0.6138 | 1 | over_retentive |
 
 Panels E and F plot these plus τ = 2.04 / 186.5 ms
-and window = 5.188 / 38.66 ms. Every row
-above is a verbatim row of `metrics.csv`.
+and window = 5.188 / 38.66 ms. The
+tables above are selected-column projections of `metrics.csv`, rounded for readability
+(four decimals for most values and two for ratios); the CSV retains the serialized
+precision.
 
 ## Artifacts
 
