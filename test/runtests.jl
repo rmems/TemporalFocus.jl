@@ -587,8 +587,8 @@ using Random
         include(joinpath(@__DIR__, "..", "docs", "gallery.jl"))
         Gal = Main.Gallery
 
-        function _build(results_dir)
-            tmp = mktempdir()
+        function _build(results_dir; repo_root = mktempdir())
+            tmp = repo_root
             out = joinpath(tmp, "experiments.md")
             assets = joinpath(tmp, "assets")
             res = Gal.build_gallery(;
@@ -703,21 +703,42 @@ using Random
             @test occursin("Smoke artifact.", page)
         end
 
-        @testset "evidence links pin to the recorded revision" begin
-            results = joinpath(mktempdir(), "results")
+        @testset "code provenance and artifact revision are distinct" begin
+            root = mktempdir()
+            run(`git -C $root init -q`)
+            run(`git -C $root config user.email gallery@example.invalid`)
+            run(`git -C $root config user.name Gallery-Test`)
+            write(joinpath(root, "code.txt"), "experiment code\n")
+            run(`git -C $root add code.txt`)
+            run(`git -C $root commit -qm code`)
+            code_sha = readchomp(`git -C $root rev-parse HEAD`)
+
+            results = joinpath(root, "experiments", "results")
             slug = first(Gal.ENTRIES).slug
             dir = joinpath(results, slug)
             mkpath(dir)
-            sha = "0123456789abcdef0123456789abcdef01234567"
-            write(joinpath(dir, "config.toml"), "commit = \"$(sha)\"\n")
+            write(joinpath(dir, "config.toml"), "commit = \"$(code_sha)\"\n")
             write(joinpath(dir, "metrics.csv"), "a\n1\n")
+            run(`git -C $root add experiments/results`)
+            run(`git -C $root commit -qm artifacts`)
+            artifact_sha = readchomp(`git -C $root rev-parse HEAD`)
 
-            _, page, _ = _build(results)
+            _, page, _ = _build(results; repo_root = root)
 
-            # Links resolve at the result's own commit, not at a moving `main`.
-            @test occursin("/blob/$(sha)/", page)
+            # The code commit remains provenance, while links use the later
+            # revision that actually contains the generated files.
+            @test occursin("/commit/$(code_sha)", page)
+            @test occursin("/blob/$(artifact_sha)/", page)
+            @test !occursin("/blob/$(code_sha)/", page)
             @test !occursin("/blob/main/", page)
             @test !occursin("Provenance incomplete", page)
+
+            # A dirty regeneration must not be attributed to stale git history.
+            write(joinpath(dir, "metrics.csv"), "a\n2\n")
+            _, dirty_page, _ = _build(results; repo_root = root)
+            @test occursin("Artifact revision incomplete", dirty_page)
+            @test occursin("/blob/main/", dirty_page)
+            @test !occursin("/blob/$(artifact_sha)/", dirty_page)
         end
 
         @testset "unusable commit values are not published as provenance" begin
@@ -766,7 +787,7 @@ using Random
 
         @testset "summary embedding is safe" begin
             md = "# Title\n\n```julia\n# not a heading\n```\n\n```@example\n1 + 1\n```\n\n## Sub\n"
-            shifted = Gal.shift_headings(md, 4)
+            shifted = Gal._shift_headings(md, 4)
             @test occursin("##### Title", shifted)
             @test occursin("###### Sub", shifted)
             # Comments inside fenced code are not treated as headings.
@@ -777,16 +798,58 @@ using Random
 
             # …including directives nested in a block quote or list item, which
             # still open a fenced block in Markdown.
-            nested = Gal.shift_headings("> ```@docs\n> x\n> ```\n\n- ```@example\n", 4)
+            nested = Gal._shift_headings(
+                "> ```@docs\n> x\n> ```\n\n- ```@example\n- x\n- ```\n\n" *
+                "- > ```@eval\n- > x\n- > ```\n",
+                4,
+            )
             @test !occursin("@docs", nested)
             @test !occursin("@example", nested)
+            @test !occursin("@eval", nested)
+
+            setext = Gal._shift_headings("Result\n======\n\nDetail\n------\n", 4)
+            @test occursin("##### Result", setext)
+            @test occursin("###### Detail", setext)
+            @test !occursin("======", setext)
+            @test !occursin("------", setext)
+        end
+
+        @testset "summary links are rebased to evidence" begin
+            root = mktempdir()
+            results = joinpath(root, "experiments", "results")
+            slug = first(Gal.ENTRIES).slug
+            dir = joinpath(results, slug)
+            mkpath(dir)
+            write(joinpath(dir, "config.toml"), "seed = 1\n")
+            write(joinpath(dir, "metrics.csv"), "a\n1\n")
+            write(joinpath(dir, "figure.png"), "png")
+            write(joinpath(dir, "summary.md"),
+                "[details](metrics.csv) ![plot](figure.png) " *
+                "[web](https://example.com) [local](#result)\n")
+
+            _, page, _ = _build(results; repo_root = root)
+
+            @test occursin("[details]($(Gal.REPO_URL)/blob/main/", page)
+            @test occursin("![plot](https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
+            @test occursin("[web](https://example.com)", page)
+            @test occursin("[local](#result)", page)
         end
 
         @testset "csv parsing" begin
-            @test Gal.split_csv_line("a,b,c") == ["a", "b", "c"]
-            @test Gal.split_csv_line("a,\"b,c\",d") == ["a", "b,c", "d"]
-            @test Gal.split_csv_line("a,\"say \"\"hi\"\"\",c") == ["a", "say \"hi\"", "c"]
-            @test Gal.cell("a|b\nc") == "a\\|b c"
+            @test Gal._split_csv_line("a,b,c") == ["a", "b", "c"]
+            @test Gal._split_csv_line("a,\"b,c\",d") == ["a", "b,c", "d"]
+            @test Gal._split_csv_line("a,\"say \"\"hi\"\"\",c") == ["a", "say \"hi\"", "c"]
+            @test Gal._cell("a|b\nc") == "a\\|b c"
+        end
+
+        @testset "internal helpers use private names" begin
+            for public_style in (:collect_result, :csv_preview, :default_repo_root,
+                                 :flatten_config, :render_result, :result_commit,
+                                 :shift_headings, :split_csv_line)
+                @test !isdefined(Gal, public_style)
+            end
+            @test isdefined(Gal, :_collect_result)
+            @test isdefined(Gal, :_shift_headings)
         end
     end
 

@@ -115,21 +115,21 @@ const PROVENANCE_KEYS = Set([
 const COMMIT_KEYS = ["commit", "git_commit", "commit_sha", "sha", "revision", "rev", "git_rev"]
 
 """
-    leaf_key(flattened) -> String
+    _leaf_key(flattened) -> String
 
 Last component of a flattened config key, lowercased. Provenance is classified on
 the leaf so a script that groups its fields (`[metadata] commit = ...` flattening
 to `metadata.commit`) is still recognized as recording a code version.
 """
-leaf_key(flattened::AbstractString) = lowercase(String(last(split(flattened, '.'))))
+_leaf_key(flattened::AbstractString) = lowercase(String(last(split(flattened, '.'))))
 
-is_provenance_key(flattened::AbstractString) = leaf_key(flattened) in PROVENANCE_KEYS
-is_commit_key(flattened::AbstractString) = leaf_key(flattened) in COMMIT_KEYS
+_is_provenance_key(flattened::AbstractString) = _leaf_key(flattened) in PROVENANCE_KEYS
+_is_commit_key(flattened::AbstractString) = _leaf_key(flattened) in COMMIT_KEYS
 
 const REPO_URL = "https://github.com/rmems/TemporalFocus.jl"
 
 "Repository root, inferred from this file's location (`<root>/docs/gallery.jl`)."
-default_repo_root() = normpath(joinpath(@__DIR__, ".."))
+_default_repo_root() = normpath(joinpath(@__DIR__, ".."))
 
 # ---------------------------------------------------------------------------
 # artifact discovery
@@ -152,12 +152,13 @@ struct ResultSet
     figure_path::Union{Nothing,String}
     summary_path::Union{Nothing,String}
     extra_figures::Vector{String}
-    commit::Union{Nothing,String}
-    commit_source::Symbol  # :config, :git or :none
-    ref::String            # git ref evidence links point at
+    commit::Union{Nothing,String}          # code version used by the experiment
+    commit_source::Symbol                  # :config, :git or :none
+    artifact_commit::Union{Nothing,String} # revision containing the rendered files
+    ref::String                            # git ref evidence links point at
 end
 
-has_artifacts(r::ResultSet) =
+_has_artifacts(r::ResultSet) =
     r.config_path !== nothing || r.metrics_path !== nothing ||
     r.figure_path !== nothing || r.summary_path !== nothing ||
     !isempty(r.extra_figures)
@@ -182,20 +183,20 @@ function _read_config(path)
 end
 
 "Does this string look like a git object name we can link to?"
-looks_like_sha(value::AbstractString) =
+_looks_like_sha(value::AbstractString) =
     match(r"^[0-9a-fA-F]{7,40}$", strip(String(value))) !== nothing
 
 """
-    config_commit(config) -> Union{Nothing,String}
+    _config_commit(config) -> Union{Nothing,String}
 
 The code version an experiment recorded for itself, from any commit-ish key at any
 nesting depth. Values that are not object names (for example `"unknown"`) are
 rejected rather than published as provenance.
 """
-function config_commit(config)
+function _config_commit(config)
     config === nothing && return nothing
-    for (key, value) in flatten_config(config)
-        if is_commit_key(key) && looks_like_sha(value)
+    for (key, value) in _flatten_config(config)
+        if _is_commit_key(key) && _looks_like_sha(value)
             return strip(value)
         end
     end
@@ -203,13 +204,13 @@ function config_commit(config)
 end
 
 """
-    collect_result(results_dir, slug; repo_root) -> ResultSet
+    _collect_result(results_dir, slug; repo_root) -> ResultSet
 
 Gather one slug's artifacts and settle its provenance: the commit the experiment
 recorded, else the commit that last changed the result directory, else none.
 """
-function collect_result(results_dir::AbstractString, slug::AbstractString;
-                        repo_root::AbstractString = default_repo_root())
+function _collect_result(results_dir::AbstractString, slug::AbstractString;
+                        repo_root::AbstractString = _default_repo_root())
     dir = joinpath(results_dir, slug)
     config_path = _existing(joinpath(dir, "config.toml"))
     figure = _existing(joinpath(dir, "figure.png"))
@@ -225,12 +226,11 @@ function collect_result(results_dir::AbstractString, slug::AbstractString;
         end
     end
     config, config_error = _read_config(config_path)
-    commit = config_commit(config)
-    source = :config
-    if commit === nothing
-        commit = result_commit(repo_root, dir)
-        source = commit === nothing ? :none : :git
-    end
+    recorded_commit = _config_commit(config)
+    artifact_commit = _result_commit(repo_root, dir)
+    commit = recorded_commit === nothing ? artifact_commit : recorded_commit
+    source = recorded_commit === nothing ?
+             (artifact_commit === nothing ? :none : :git) : :config
     return ResultSet(
         slug,
         dir,
@@ -243,17 +243,18 @@ function collect_result(results_dir::AbstractString, slug::AbstractString;
         extras,
         commit,
         source,
-        commit === nothing ? "main" : commit,
+        artifact_commit,
+        artifact_commit === nothing ? "main" : artifact_commit,
     )
 end
 
 """
-    discovered_slugs(results_dir) -> Vector{String}
+    _discovered_slugs(results_dir) -> Vector{String}
 
 Every subdirectory of `results_dir`, sorted. Returns an empty vector when the
 directory does not exist (the common case before the experiment wave lands).
 """
-function discovered_slugs(results_dir::AbstractString)
+function _discovered_slugs(results_dir::AbstractString)
     isdir(results_dir) || return String[]
     return sort([name for name in readdir(results_dir) if isdir(joinpath(results_dir, name))])
 end
@@ -263,39 +264,39 @@ end
 # ---------------------------------------------------------------------------
 
 "Escape a value so it is safe inside a Markdown table cell."
-function cell(value::AbstractString)
+function _cell(value::AbstractString)
     text = replace(String(value), "\r\n" => " ", '\n' => " ", '\r' => " ")
     text = replace(text, "|" => "\\|")
     return strip(text)
 end
 
-format_value(v::AbstractString) = String(v)
-format_value(v::Bool) = string(v)
-format_value(v::Real) = string(v)
-format_value(v::AbstractVector) = join(map(format_value, v), ", ")
-format_value(v) = string(v)
+_format_value(v::AbstractString) = String(v)
+_format_value(v::Bool) = string(v)
+_format_value(v::Real) = string(v)
+_format_value(v::AbstractVector) = join(map(_format_value, v), ", ")
+_format_value(v) = string(v)
 
 """
-    flatten_config(cfg) -> Vector{Pair{String,String}}
+    _flatten_config(cfg) -> Vector{Pair{String,String}}
 
 Flatten nested TOML tables into `parent.child` keys, sorted by key.
 """
-function flatten_config(cfg::AbstractDict, prefix::AbstractString = "")
+function _flatten_config(cfg::AbstractDict, prefix::AbstractString = "")
     out = Pair{String,String}[]
     for key in sort(collect(keys(cfg)); by = string)
         value = cfg[key]
         name = isempty(prefix) ? string(key) : string(prefix, ".", key)
         if value isa AbstractDict
-            append!(out, flatten_config(value, name))
+            append!(out, _flatten_config(value, name))
         else
-            push!(out, name => format_value(value))
+            push!(out, name => _format_value(value))
         end
     end
     return out
 end
 
 "Split one CSV record, honoring double-quoted fields."
-function split_csv_line(line::AbstractString)
+function _split_csv_line(line::AbstractString)
     fields = String[]
     buf = IOBuffer()
     in_quotes = false
@@ -328,23 +329,23 @@ function split_csv_line(line::AbstractString)
 end
 
 """
-    csv_preview(path; maxrows=8) -> (header, rows, total_rows)
+    _csv_preview(path; maxrows=8) -> (header, rows, total_rows)
 
 Read the header and at most `maxrows` data rows, and count the remaining data
 rows without holding them in memory.
 """
-function csv_preview(path::AbstractString; maxrows::Int = 8)
+function _csv_preview(path::AbstractString; maxrows::Int = 8)
     header = String[]
     rows = Vector{Vector{String}}()
     total = 0
-    function take_record(record)
+    function _take_record(record)
         isempty(strip(record)) && return
         if isempty(header)
-            header = split_csv_line(record)
+            header = _split_csv_line(record)
             return
         end
         total += 1
-        length(rows) < maxrows && push!(rows, split_csv_line(record))
+        length(rows) < maxrows && push!(rows, _split_csv_line(record))
     end
     open(path, "r") do io
         pending = ""
@@ -353,16 +354,16 @@ function csv_preview(path::AbstractString; maxrows::Int = 8)
             # A quoted field may span lines; a record is complete only once its
             # quotes balance. Escaped quotes ("") come in pairs, so parity holds.
             iseven(count(==('"'), pending)) || continue
-            take_record(pending)
+            _take_record(pending)
             pending = ""
         end
-        take_record(pending)  # unterminated quote: publish what is there
+        _take_record(pending)  # unterminated quote: publish what is there
     end
     return header, rows, total
 end
 
 """
-    shift_headings(md, shift) -> String
+    _shift_headings(md, shift) -> String
 
 Push every ATX heading down by `shift` levels so an embedded `summary.md` nests
 under the gallery's own headings, leaving fenced code blocks untouched. Fenced
@@ -372,11 +373,17 @@ be able to execute code during the docs build. Directive fences are recognized
 inside Markdown containers too (block quotes, list items), since those still open
 a fenced block.
 """
-function shift_headings(md::AbstractString, shift::Integer)
+function _shift_headings(md::AbstractString, shift::Integer)
     out = IOBuffer()
     fence = nothing  # currently open fence marker, or nothing
-    for line in split(md, '\n'; keepempty = true)
-        m = match(r"^([\s>]*(?:[-*+]\s+|\d+[.)]\s+)?)(`{3,}|~{3,})(.*)$", line)
+    lines = split(md, '\n'; keepempty = true)
+    i = 1
+    while i <= length(lines)
+        line = lines[i]
+        # CommonMark containers can nest in either order and to arbitrary depth.
+        # Repeating the container atom recognizes, for example, `- > ```@example`
+        # and `> 1. > ```@docs` without treating generated directives as executable.
+        m = match(r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*)(`{3,}|~{3,})(.*)$", line)
         if m !== nothing
             prefix, marker, info = m.captures[1], m.captures[2], m.captures[3]
             if fence === nothing
@@ -388,6 +395,7 @@ function shift_headings(md::AbstractString, shift::Integer)
                 marker[1:1] == fence && (fence = nothing)
                 println(out, line)
             end
+            i += 1
             continue
         end
         if fence === nothing
@@ -395,42 +403,106 @@ function shift_headings(md::AbstractString, shift::Integer)
             if h !== nothing
                 level = min(6, length(h.captures[1]) + shift)
                 println(out, "#"^level, h.captures[2] === nothing ? "" : h.captures[2])
+                i += 1
                 continue
+            end
+
+            # Setext headings are two-line constructs. Convert them to ATX form
+            # before embedding so they nest under the gallery just like `#` headings.
+            if i < length(lines) && !isempty(strip(line))
+                underline = match(r"^[ \t]*(=+|-+)[ \t]*$", lines[i+1])
+                if underline !== nothing
+                    base_level = startswith(underline.captures[1], "=") ? 1 : 2
+                    level = min(6, base_level + shift)
+                    println(out, "#"^level, " ", strip(line))
+                    i += 2
+                    continue
+                end
             end
         end
         println(out, line)
+        i += 1
     end
     text = String(take!(out))
     return endswith(text, "\n") ? text[1:prevind(text, lastindex(text))] : text
 end
 
 "Repo-relative path with forward slashes, for display and for GitHub links."
-function rel_path(root::AbstractString, path::AbstractString)
+function _rel_path(root::AbstractString, path::AbstractString)
     rel = relpath(path, root)
     return replace(rel, '\\' => '/')
 end
 
 """
-    blob_url(root, path, ref="main")
+    _blob_url(root, path, ref="main")
 
 Link an artifact at the revision it belongs to. Published results link at their own
 commit, so a versioned gallery page keeps pointing at the evidence it was rendered
 from even after `main` moves on.
 """
-blob_url(root, path, ref::AbstractString = "main") =
-    string(REPO_URL, "/blob/", ref, "/", rel_path(root, path))
+_blob_url(root, path, ref::AbstractString = "main") =
+    string(REPO_URL, "/blob/", ref, "/", _rel_path(root, path))
+
+"Raw-content URL for generated images embedded by a summary."
+_raw_url(root, path, ref::AbstractString = "main") =
+    string("https://raw.githubusercontent.com/rmems/TemporalFocus.jl/", ref, "/",
+           _rel_path(root, path))
+
+"True when a Markdown destination already has an absolute or document-local base."
+function _is_absolute_destination(dest::AbstractString)
+    isempty(dest) && return true
+    startswith(dest, '#') && return true
+    startswith(dest, '/') && return true
+    return match(r"^[A-Za-z][A-Za-z0-9+.-]*:", dest) !== nothing
+end
+
+"Rebase relative links in an embedded summary to immutable repository evidence."
+function _rebase_summary_links(md::AbstractString, result::ResultSet, root::AbstractString)
+    result.summary_path === nothing && return String(md)
+    pattern = r"(!?\[[^\]\n]*\])\(([^)\s]+)([^)]*)\)"
+    source = String(md)
+    out = IOBuffer()
+    cursor = firstindex(source)
+    for m in eachmatch(pattern, source)
+        m.offset > cursor && print(out, SubString(source, cursor, prevind(source, m.offset)))
+        label, raw_dest, suffix = m.captures
+        wrapped = startswith(raw_dest, '<') && endswith(raw_dest, '>')
+        dest = wrapped ? raw_dest[2:prevind(raw_dest, lastindex(raw_dest))] : raw_dest
+        replacement = m.match
+        if !_is_absolute_destination(dest)
+            parts = match(r"^([^?#]*)([?#].*)?$", dest)
+            if parts !== nothing
+                relative, tail = parts.captures
+                target = normpath(joinpath(dirname(result.summary_path), relative))
+                repo_relative = relpath(target, root)
+                outside = repo_relative == ".." || startswith(repo_relative, "../") ||
+                          startswith(repo_relative, "..\\")
+                if !outside
+                    url = startswith(label, "!") ? _raw_url(root, target, result.ref) :
+                          _blob_url(root, target, result.ref)
+                    replacement = string(label, "(", url,
+                        tail === nothing ? "" : tail, suffix, ")")
+                end
+            end
+        end
+        print(out, replacement)
+        cursor = nextind(source, m.offset, length(m.match))
+    end
+    cursor <= lastindex(source) && print(out, SubString(source, cursor, lastindex(source)))
+    return String(take!(out))
+end
 
 "Abbreviate an object name for display."
-short_sha(sha::AbstractString) = String(sha)[1:min(lastindex(String(sha)), 12)]
+_short_sha(sha::AbstractString) = String(sha)[1:min(lastindex(String(sha)), 12)]
 
 """
-    result_commit(root, dir) -> Union{Nothing,String}
+    _result_commit(root, dir) -> Union{Nothing,String}
 
 Best-effort provenance fallback: the commit that last touched a result
 directory. Returns `nothing` when git is unavailable or the artifacts are not
 committed yet.
 """
-function result_commit(root::AbstractString, dir::AbstractString)
+function _result_commit(root::AbstractString, dir::AbstractString)
     isdir(joinpath(root, ".git")) || isfile(joinpath(root, ".git")) || return nothing
     try
         # In a shallow clone (the default for `actions/checkout`) `git log -- <path>`
@@ -438,7 +510,11 @@ function result_commit(root::AbstractString, dir::AbstractString)
         # a confidently wrong code version. Report nothing instead.
         strip(readchomp(`git -C $root rev-parse --is-shallow-repository`)) == "true" &&
             return nothing
-        sha = readchomp(`git -C $root log -1 --format=%H -- $dir`)
+        path = relpath(dir, root)
+        # `git log` reports only historical state. Refuse to attach that commit to
+        # regenerated or edited artifacts that are currently dirty in the worktree.
+        isempty(strip(readchomp(`git -C $root status --porcelain -- $path`))) || return nothing
+        sha = readchomp(`git -C $root log -1 --format=%H -- $path`)
         return isempty(sha) ? nothing : sha
     catch
         return nothing
@@ -449,7 +525,7 @@ end
 # rendering
 # ---------------------------------------------------------------------------
 
-function render_setup(io::IO, result::ResultSet, root::AbstractString)
+function _render_setup(io::IO, result::ResultSet, root::AbstractString)
     println(io, "#### Setup")
     println(io)
     if result.config === nothing
@@ -470,25 +546,25 @@ function render_setup(io::IO, result::ResultSet, root::AbstractString)
         println(io)
         return
     end
-    pairs = filter(p -> !is_provenance_key(first(p)), flatten_config(result.config))
+    pairs = filter(p -> !_is_provenance_key(first(p)), _flatten_config(result.config))
     if isempty(pairs)
         println(io, "`config.toml` records no setup parameters beyond provenance fields.")
         println(io)
         return
     end
     println(io, "Values below are read from ",
-        "[`", rel_path(root, result.config_path), "`](",
-        blob_url(root, result.config_path, result.ref), ").")
+        "[`", _rel_path(root, result.config_path), "`](",
+        _blob_url(root, result.config_path, result.ref), ").")
     println(io)
     println(io, "| Parameter | Value |")
     println(io, "|---|---|")
     for (key, value) in pairs
-        println(io, "| `", cell(key), "` | `", cell(value), "` |")
+        println(io, "| `", _cell(key), "` | `", _cell(value), "` |")
     end
     println(io)
 end
 
-function render_artifact(io::IO, result::ResultSet, title::AbstractString, root::AbstractString,
+function _render_artifact(io::IO, result::ResultSet, title::AbstractString, root::AbstractString,
                          assets_rel::AbstractString)
     println(io, "#### Primary artifact")
     println(io)
@@ -500,8 +576,8 @@ function render_artifact(io::IO, result::ResultSet, title::AbstractString, root:
             println(io)
             for name in result.extra_figures
                 path = joinpath(result.dir, name)
-                println(io, "- [`", rel_path(root, path), "`](",
-                    blob_url(root, path, result.ref), ")")
+                println(io, "- [`", _rel_path(root, path), "`](",
+                    _blob_url(root, path, result.ref), ")")
             end
         end
         println(io)
@@ -510,18 +586,18 @@ function render_artifact(io::IO, result::ResultSet, title::AbstractString, root:
     println(io, "![", title, " — generated figure](", assets_rel, "/", result.slug, "/figure.png)")
     println(io)
     println(io, "*Generated by the experiment script; source of truth is ",
-        "[`", rel_path(root, result.figure_path), "`](",
-        blob_url(root, result.figure_path, result.ref), ").*")
+        "[`", _rel_path(root, result.figure_path), "`](",
+        _blob_url(root, result.figure_path, result.ref), ").*")
     println(io)
     if !isempty(result.extra_figures)
         println(io, "Companion graphics: ",
-            join(["[`$(name)`]($(blob_url(root, joinpath(result.dir, name), result.ref)))"
+            join(["[`$(name)`]($(_blob_url(root, joinpath(result.dir, name), result.ref)))"
                   for name in result.extra_figures], ", "), ".")
         println(io)
     end
 end
 
-function render_result(io::IO, result::ResultSet, root::AbstractString)
+function _render_result(io::IO, result::ResultSet, root::AbstractString)
     println(io, "#### Observed result")
     println(io)
     if result.summary_path === nothing
@@ -537,15 +613,15 @@ function render_result(io::IO, result::ResultSet, root::AbstractString)
         return
     end
     println(io, "Quoted verbatim from the generated ",
-        "[`", rel_path(root, result.summary_path), "`](",
-        blob_url(root, result.summary_path, result.ref), ") ",
+        "[`", _rel_path(root, result.summary_path), "`](",
+        _blob_url(root, result.summary_path, result.ref), ") ",
         "— including any null or negative finding.")
     println(io)
-    println(io, shift_headings(text, 4))
+    println(io, _shift_headings(_rebase_summary_links(text, result, root), 4))
     println(io)
 end
 
-function render_metrics(io::IO, result::ResultSet, root::AbstractString)
+function _render_metrics(io::IO, result::ResultSet, root::AbstractString)
     println(io, "#### Metrics")
     println(io)
     if result.metrics_path === nothing
@@ -553,9 +629,9 @@ function render_metrics(io::IO, result::ResultSet, root::AbstractString)
         println(io)
         return
     end
-    header, rows, total = csv_preview(result.metrics_path)
-    link = string("[`", rel_path(root, result.metrics_path), "`](",
-        blob_url(root, result.metrics_path, result.ref), ")")
+    header, rows, total = _csv_preview(result.metrics_path)
+    link = string("[`", _rel_path(root, result.metrics_path), "`](",
+        _blob_url(root, result.metrics_path, result.ref), ")")
     if isempty(header)
         println(io, "The generated metrics file ", link, " is empty.")
         println(io)
@@ -564,12 +640,12 @@ function render_metrics(io::IO, result::ResultSet, root::AbstractString)
     println(io, total, " recorded row", total == 1 ? "" : "s", " over ", length(header),
         " column", length(header) == 1 ? "" : "s", " in ", link, ".")
     println(io)
-    println(io, "| ", join([cell(h) for h in header], " | "), " |")
+    println(io, "| ", join([_cell(h) for h in header], " | "), " |")
     println(io, "|", repeat("---|", length(header)))
     for row in rows
         padded = length(row) < length(header) ?
                  vcat(row, fill("", length(header) - length(row))) : row[1:length(header)]
-        println(io, "| ", join([cell(c) for c in padded], " | "), " |")
+        println(io, "| ", join([_cell(c) for c in padded], " | "), " |")
     end
     println(io)
     if total > length(rows)
@@ -579,7 +655,7 @@ function render_metrics(io::IO, result::ResultSet, root::AbstractString)
     end
 end
 
-function render_provenance(io::IO, result::ResultSet, root::AbstractString)
+function _render_provenance(io::IO, result::ResultSet, root::AbstractString)
     println(io, "#### Evidence and provenance")
     println(io)
     println(io, "| Artifact | Path |")
@@ -591,34 +667,33 @@ function render_provenance(io::IO, result::ResultSet, root::AbstractString)
         if path === nothing
             println(io, "| ", label, " | *not emitted* |")
         else
-            println(io, "| ", label, " | [`", rel_path(root, path), "`](",
-                blob_url(root, path, result.ref), ") |")
+            println(io, "| ", label, " | [`", _rel_path(root, path), "`](",
+                _blob_url(root, path, result.ref), ") |")
         end
     end
     println(io)
 
     prov = result.config === nothing ? Pair{String,String}[] :
-           filter(p -> is_provenance_key(first(p)), flatten_config(result.config))
+           filter(p -> _is_provenance_key(first(p)), _flatten_config(result.config))
     if !isempty(prov)
         println(io, "Provenance fields recorded by the experiment script:")
         println(io)
         println(io, "| Field | Value |")
         println(io, "|---|---|")
         for (key, value) in prov
-            println(io, "| `", cell(key), "` | `", cell(value), "` |")
+            println(io, "| `", _cell(key), "` | `", _cell(value), "` |")
         end
         println(io)
     end
 
     if result.commit_source == :config
-        println(io, "Evidence links above resolve at the recorded code version ",
-            "[`", short_sha(result.commit), "`](", REPO_URL, "/commit/", result.commit, ").")
+        println(io, "Recorded code version: ",
+            "[`", _short_sha(result.commit), "`](", REPO_URL, "/commit/", result.commit, ").")
         println(io)
     elseif result.commit_source == :git
         println(io, "Code version: the experiment script recorded no commit field, so provenance")
         println(io, "falls back to the commit that last changed these artifacts, ",
-            "[`", short_sha(result.commit), "`](", REPO_URL, "/commit/", result.commit,
-            "), which evidence links also resolve at.")
+            "[`", _short_sha(result.commit), "`](", REPO_URL, "/commit/", result.commit, ").")
         println(io)
     else
         println(io, "!!! warning \"Provenance incomplete\"")
@@ -626,13 +701,25 @@ function render_provenance(io::IO, result::ResultSet, root::AbstractString)
         println(io, "    commit history available when this page was rendered does not identify one")
         println(io, "    either — the artifacts may be uncommitted, or the docs build may have run")
         println(io, "    from a shallow clone. The exact code version behind these numbers cannot")
-        println(io, "    be identified, and evidence links resolve at `main`. See the provenance")
-        println(io, "    policy above.")
+        println(io, "    be identified. See the provenance policy above.")
+        println(io)
+    end
+
+    if result.artifact_commit === nothing
+        println(io, "!!! warning \"Artifact revision incomplete\"")
+        println(io, "    The current artifact files are uncommitted, the checkout is shallow, or git")
+        println(io, "    history is unavailable. No immutable revision containing these exact files")
+        println(io, "    can be claimed; evidence links therefore fall back to `main`.")
+        println(io)
+    else
+        println(io, "Evidence links resolve at the artifact-containing revision ",
+            "[`", _short_sha(result.artifact_commit), "`](", REPO_URL, "/commit/",
+            result.artifact_commit, ").")
         println(io)
     end
 end
 
-function render_published(io::IO, result::ResultSet, entry::Union{Nothing,GalleryEntry},
+function _render_published(io::IO, result::ResultSet, entry::Union{Nothing,GalleryEntry},
                           root::AbstractString, assets_rel::AbstractString)
     title = entry === nothing ? replace(result.slug, '_' => ' ') |> titlecase : entry.title
     println(io, "### ", title)
@@ -640,7 +727,7 @@ function render_published(io::IO, result::ResultSet, entry::Union{Nothing,Galler
     if entry === nothing
         println(io, "**Status** — published · not part of the planned experiment set")
         println(io)
-        println(io, "Discovered at `", rel_path(root, result.dir), "/`. This slug carries no")
+        println(io, "Discovered at `", _rel_path(root, result.dir), "/`. This slug carries no")
         println(io, "editorial question or hypothesis in the gallery, so its own generated")
         println(io, "artifacts speak for it.")
     else
@@ -653,10 +740,10 @@ function render_published(io::IO, result::ResultSet, entry::Union{Nothing,Galler
     end
     println(io)
 
-    render_setup(io, result, root)
-    render_artifact(io, result, title, root, assets_rel)
-    render_result(io, result, root)
-    render_metrics(io, result, root)
+    _render_setup(io, result, root)
+    _render_artifact(io, result, title, root, assets_rel)
+    _render_result(io, result, root)
+    _render_metrics(io, result, root)
 
     println(io, "#### Reproduce")
     println(io)
@@ -670,10 +757,10 @@ function render_published(io::IO, result::ResultSet, entry::Union{Nothing,Galler
     println(io, "```")
     println(io)
 
-    render_provenance(io, result, root)
+    _render_provenance(io, result, root)
 end
 
-function render_pending(io::IO, entry::GalleryEntry, root::AbstractString)
+function _render_pending(io::IO, entry::GalleryEntry, root::AbstractString)
     println(io, "### ", entry.title)
     println(io)
     println(io, "**Status** — not yet published · tracking issue [#", entry.issue, "](",
@@ -698,7 +785,7 @@ function render_pending(io::IO, entry::GalleryEntry, root::AbstractString)
     println(io)
 end
 
-function render_header(io::IO, published::Vector{String}, pending::Vector{String},
+function _render_header(io::IO, published::Vector{String}, pending::Vector{String},
                        results_dir::AbstractString, root::AbstractString)
     println(io, "# Experiment Gallery")
     println(io)
@@ -710,7 +797,7 @@ function render_header(io::IO, published::Vector{String}, pending::Vector{String
     println(io)
     println(io, "!!! note \"This page is generated\"")
     println(io, "    `docs/gallery.jl` renders `docs/src/experiments.md` from the artifacts under")
-    println(io, "    `", rel_path(root, results_dir), "/`, and `docs/make.jl` regenerates it on every")
+    println(io, "    `", _rel_path(root, results_dir), "/`, and `docs/make.jl` regenerates it on every")
     println(io, "    docs build. Do not edit the Markdown by hand — edit the generator, or re-run the")
     println(io, "    experiment.")
     println(io)
@@ -750,10 +837,10 @@ function render_header(io::IO, published::Vector{String}, pending::Vector{String
     println(io, "   directory and says so; when neither is available — uncommitted artifacts, or a")
     println(io, "   shallow clone whose history cannot answer the question — it publishes a warning")
     println(io, "   instead of an unverifiable claim.")
-    println(io, "6. **Evidence links are pinned to a revision.** Each result's links resolve at its")
-    println(io, "   own commit, so a versioned copy of this page keeps pointing at the evidence it")
-    println(io, "   was rendered from even after `main` moves on. Only results with no identifiable")
-    println(io, "   code version fall back to `main`.")
+    println(io, "6. **Evidence links are pinned separately.** A config commit identifies code, not")
+    println(io, "   necessarily the later revision that committed its generated artifacts. Links use")
+    println(io, "   the commit that last changed the clean result directory. Dirty, uncommitted, or")
+    println(io, "   shallow results get a warning instead of being attributed to stale history.")
     println(io, "7. **Published results are committed.** To appear in the hosted docs, a result")
     println(io, "   directory must be committed to the repository. Keep figures small (≈500 KB or")
     println(io, "   less); large or intermediate data stays out of git.")
@@ -797,7 +884,7 @@ function render_header(io::IO, published::Vector{String}, pending::Vector{String
     println(io)
     if isempty(published)
         println(io, "!!! warning \"No results published yet\"")
-        println(io, "    No result directories were found under `", rel_path(root, results_dir), "/`,")
+        println(io, "    No result directories were found under `", _rel_path(root, results_dir), "/`,")
         println(io, "    so every entry below is pending. The gallery deliberately shows an empty")
         println(io, "    state rather than placeholder numbers: nothing here is claimed until an")
         println(io, "    experiment has actually produced it.")
@@ -829,18 +916,18 @@ Safe to call with no experiments present: the result is a valid page in which
 every expected experiment is listed as pending.
 """
 function build_gallery(;
-    repo_root::AbstractString = default_repo_root(),
+    repo_root::AbstractString = _default_repo_root(),
     results_dir::AbstractString = joinpath(repo_root, "experiments", "results"),
     out_path::AbstractString = joinpath(repo_root, "docs", "src", "experiments.md"),
     assets_dir::AbstractString = joinpath(repo_root, "docs", "src", "assets", "experiments"),
     assets_rel::AbstractString = "assets/experiments",
 )
-    slugs = discovered_slugs(results_dir)
+    slugs = _discovered_slugs(results_dir)
     results = Dict{String,ResultSet}()
     published = String[]
     for slug in slugs
-        result = collect_result(results_dir, slug; repo_root)
-        has_artifacts(result) || continue
+        result = _collect_result(results_dir, slug; repo_root)
+        _has_artifacts(result) || continue
         results[slug] = result
         push!(published, slug)
     end
@@ -866,15 +953,15 @@ function build_gallery(;
     end
 
     io = IOBuffer()
-    render_header(io, published, pending, results_dir, repo_root)
+    _render_header(io, published, pending, results_dir, repo_root)
 
     println(io, "## Experiments")
     println(io)
     for entry in ENTRIES
         if entry.slug in published
-            render_published(io, results[entry.slug], entry, repo_root, assets_rel)
+            _render_published(io, results[entry.slug], entry, repo_root, assets_rel)
         else
-            render_pending(io, entry, repo_root)
+            _render_pending(io, entry, repo_root)
         end
     end
 
@@ -886,7 +973,7 @@ function build_gallery(;
         println(io, "example harness smoke tests — rendered from their own artifacts.")
         println(io)
         for slug in extra
-            render_published(io, results[slug], nothing, repo_root, assets_rel)
+            _render_published(io, results[slug], nothing, repo_root, assets_rel)
         end
     end
 

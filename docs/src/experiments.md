@@ -46,10 +46,10 @@ machine-readable evidence.
    directory and says so; when neither is available — uncommitted artifacts, or a
    shallow clone whose history cannot answer the question — it publishes a warning
    instead of an unverifiable claim.
-6. **Evidence links are pinned to a revision.** Each result's links resolve at its
-   own commit, so a versioned copy of this page keeps pointing at the evidence it
-   was rendered from even after `main` moves on. Only results with no identifiable
-   code version fall back to `main`.
+6. **Evidence links are pinned separately.** A config commit identifies code, not
+   necessarily the later revision that committed its generated artifacts. Links use
+   the commit that last changed the clean result directory. Dirty, uncommitted, or
+   shallow results get a warning instead of being attributed to stale history.
 7. **Published results are committed.** To appear in the hosted docs, a result
    directory must be committed to the repository. Keep figures small (≈500 KB or
    less); large or intermediate data stays out of git.
