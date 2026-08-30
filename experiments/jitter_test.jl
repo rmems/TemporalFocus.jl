@@ -680,11 +680,19 @@ function _summary_collapse_table(io, summaries)
     return nothing
 end
 
-"True when retention drops steeply without a simultaneous rise in collapse rate."
-function _has_steep_reordering(retentions, collapse)
-    return any(1:(length(retentions) - 1)) do i
-        retentions[i] - retentions[i+1] >= 0.5 && collapse[i+1] <= collapse[i]
+"True when at least half the paired seeds switch directly from correct-active to wrong-active."
+function _has_steep_reordering(rows, tau, window)
+    paired = Dict((r.jitter, r.seed) => r for r in rows
+        if r.kernel == "continuous" && r.tau == tau && r.window == window && r.jitter > 0.0f0)
+    for i in 2:(length(JITTERS) - 1)
+        transitions = count(SEEDS) do seed
+            before = paired[(JITTERS[i], seed)]
+            after = paired[(JITTERS[i+1], seed)]
+            before.active && before.top1_correct && after.active && !after.top1_correct
+        end
+        transitions / length(SEEDS) >= 0.5 && return true
     end
+    return false
 end
 
 """
@@ -692,7 +700,7 @@ Classify the two continuous failure modes independently. A configuration can
 both collapse at one scale and undergo a steep active-output reordering at
 another, so `collapse_windows` and `steep_*` deliberately overlap.
 """
-function _classify_continuous(summaries)
+function _classify_continuous(rows, summaries)
     eligible = 0
     graceful = 0
     overlap = 0
@@ -705,7 +713,7 @@ function _classify_continuous(summaries)
         retentions[1] >= RETENTION_THRESHOLD || continue
         eligible += 1
         has_collapse = maximum(collapse) > 0.0
-        has_steep_reordering = _has_steep_reordering(retentions, collapse)
+        has_steep_reordering = _has_steep_reordering(rows, tau, window)
         if has_collapse
             push!(collapse_windows, window)
         end
@@ -731,13 +739,14 @@ function _summary_continuous(io, rows, summaries)
     _summary_regime_map(io, summaries)
     _summary_collapse_table(io, summaries)
 
-    classes = _classify_continuous(summaries)
+    classes = _classify_continuous(rows, summaries)
     collapsed = length(classes.collapse_windows)
     steep = length(classes.steep_taus)
 
     println(io, @sprintf("Of the %d continuous configurations that start out selecting the target, **%d degrade gracefully** ",
             classes.eligible, classes.graceful),
-        "— no attention collapse and no ≥50-point retention drop while collapse rate stays flat or falls. ",
+        "— no attention collapse and no jitter step where at least half of paired seeds switch directly from ",
+        "correct-and-active to wrong-and-active. ",
         "The remaining configurations exhibit one or both of **two independently measured mechanisms**:")
     println(io)
     println(io, @sprintf("- **Window-boundary collapse (%d configurations, at window ∈ {%s}).** ",
@@ -748,9 +757,9 @@ function _summary_continuous(io, rows, summaries)
     if steep > 0
         println(io, @sprintf("- **Steep active-output reordering (%d configurations, at τ ∈ {%s} and window ∈ {%s}).** ",
                 steep, join(_grid_set(classes.steep_taus), ", "), join(_grid_set(classes.steep_windows), ", ")),
-            "At the steep step, collapse rate does not rise, so the ≥50-point retention loss comes from active outputs ",
-            "reordering rather than new zero-attention cases. Depending on the configuration, a sharp recency weight or ",
-            "a narrow-window active scene lets one jitter step move many seeds across the decision boundary at once.")
+            "At least half of the same paired seeds switch directly from correct-and-active to wrong-and-active in one ",
+            "jitter step, so this count cannot be inflated by different seeds entering and leaving collapse while the ",
+            "aggregate collapse rate stays flat.")
     end
     classes.overlap > 0 && println(io, @sprintf("- **Overlap (%d configurations).** These exhibit some window-boundary collapse at one or more scales and also a separate steep active-output reordering step; assigning them to a single bucket would hide one mechanism.", classes.overlap))
     println(io)

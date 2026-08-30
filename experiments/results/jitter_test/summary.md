@@ -67,11 +67,10 @@ A window-boundary failure has a signature the smooth decay does not: total atten
 | 2.00 | 0.10 | 0.2 | 0.62 | 0.50 |
 
 
-Of the 34 continuous configurations that start out selecting the target, **18 degrade gracefully** — no attention collapse and no ≥50-point retention drop while collapse rate stays flat or falls. The remaining configurations exhibit one or both of **two independently measured mechanisms**:
+Of the 34 continuous configurations that start out selecting the target, **18 degrade gracefully** — no attention collapse and no jitter step where at least half of paired seeds switch directly from correct-and-active to wrong-and-active. The remaining configurations exhibit one or both of **two independently measured mechanisms**:
 
 - **Window-boundary collapse (6 configurations, at window ∈ {0.10}).** Jitter pushes the target's context spikes past `|Δt| ≤ window`, the kernel admits no pairs at all, and attention goes to exactly zero — there is no second-best neuron to fall back on. This only happens for windows comparable to the target's 0.04 alignment error.
-- **Steep active-output reordering (16 configurations, at τ ∈ {0.05, 0.10, 0.25, 0.50, 1.00, 2.00} and window ∈ {0.10, 0.25, 0.50, 1.00, 2.00, 4.00}).** At the steep step, collapse rate does not rise, so the ≥50-point retention loss comes from active outputs reordering rather than new zero-attention cases. Depending on the configuration, a sharp recency weight or a narrow-window active scene lets one jitter step move many seeds across the decision boundary at once.
-- **Overlap (6 configurations).** These exhibit some window-boundary collapse at one or more scales and also a separate steep active-output reordering step; assigning them to a single bucket would hide one mechanism.
+- **Steep active-output reordering (10 configurations, at τ ∈ {0.05, 0.10} and window ∈ {0.25, 0.50, 1.00, 2.00, 4.00}).** At least half of the same paired seeds switch directly from correct-and-active to wrong-and-active in one jitter step, so this count cannot be inflated by different seeds entering and leaving collapse while the aggregate collapse rate stays flat.
 
 The honest statement is therefore narrower than "narrow windows fail abruptly". A narrow window is the only thing that produces *collapse*, but a short τ produces an equally sharp *reordering* at every window width, including the widest. Panel C of `figure.png` shows both shapes on one axis, with dotted lines marking collapse rate.
 
