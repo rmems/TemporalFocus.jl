@@ -669,6 +669,10 @@ using Random
             @test !occursin("Provenance incomplete", page)
             @test occursin("`params.tau`", page)
             @test Gal._is_provenance_key("metadata.version")
+            @test Gal._is_provenance_key("git.commit")
+            @test Gal._is_commit_key("git.commit")
+            @test Gal._config_commit(Dict("git" => Dict("commit" => "deadbeef"))) ==
+                  "deadbeef"
             @test Gal._is_provenance_key("date")
             @test !Gal._is_provenance_key("kernel.version")
             @test !Gal._is_provenance_key("dataset.date")
@@ -882,6 +886,10 @@ using Random
             @test occursin("###### Detail", setext)
             @test !occursin("======", setext)
             @test !occursin("------", setext)
+
+            indented_atx = Gal._shift_headings("  # Result\n   ## Detail\n", 4)
+            @test occursin("  ##### Result", indented_atx)
+            @test occursin("   ###### Detail", indented_atx)
         end
 
         @testset "summary links are rebased to evidence" begin
@@ -895,6 +903,7 @@ using Random
             write(joinpath(dir, "figure.png"), "png")
             write(joinpath(dir, "summary.md"),
                 "[details](metrics.csv) ![plot](figure.png) " *
+                "[spaced](<figures/result plot.png>) " *
                 "[web](https://example.com) [local](#result)\n\n" *
                 "[reference][metrics] ![reference plot][figure]\n\n" *
                 "[metrics]: metrics.csv?download=1\n" *
@@ -908,6 +917,8 @@ using Random
 
             @test occursin("[details]($(Gal.REPO_URL)/blob/main/", page)
             @test occursin("![plot](https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
+            @test occursin("[spaced](<$(Gal.REPO_URL)/blob/main/", page)
+            @test occursin("figures/result plot.png>)", page)
             @test occursin("[web](https://example.com)", page)
             @test occursin("[local](#result)", page)
             @test occursin("[metrics]: $(Gal.REPO_URL)/blob/main/", page)

@@ -119,7 +119,7 @@ const CONTEXTUAL_PROVENANCE_KEYS = Set([
 
 "Table names whose nested fields describe a run rather than experiment setup."
 const PROVENANCE_TABLES = Set([
-    "metadata", "provenance", "run", "runtime", "environment",
+    "metadata", "provenance", "run", "runtime", "environment", "git",
 ])
 
 "Provenance keys that identify the code version a result was produced from."
@@ -426,10 +426,11 @@ function _shift_headings(md::AbstractString, shift::Integer)
             continue
         end
         if fence === nothing
-            h = match(r"^(#{1,6})(\s.*)?$", line)
+            h = match(r"^( {0,3})(#{1,6})(\s.*)?$", line)
             if h !== nothing
-                level = min(6, length(h.captures[1]) + shift)
-                println(out, "#"^level, h.captures[2] === nothing ? "" : h.captures[2])
+                indent, marker, text = h.captures
+                level = min(6, length(marker) + shift)
+                println(out, indent, "#"^level, text === nothing ? "" : text)
                 i += 1
                 continue
             end
@@ -566,7 +567,7 @@ function _rebase_summary_line(line::AbstractString, image_labels::Set{String},
                               result::ResultSet, root::AbstractString)
     source = String(line)
     code_ranges = _inline_code_ranges(source)
-    pattern = r"(!?\[[^\]\n]*\])\(([^)\s]+)([^)]*)\)"
+    pattern = r"(!?\[[^\]\n]*\])\((<[^>\n]*>|[^)\s]+)([^)]*)\)"
     out = IOBuffer()
     cursor = firstindex(source)
     for m in eachmatch(pattern, source)
@@ -577,7 +578,8 @@ function _rebase_summary_line(line::AbstractString, image_labels::Set{String},
             rebased = _rebase_summary_destination(
                 raw_dest, startswith(label, "!"), result, root)
             if rebased !== nothing
-                replacement = string(label, "(", rebased, suffix, ")")
+                destination = startswith(raw_dest, '<') ? string("<", rebased, ">") : rebased
+                replacement = string(label, "(", destination, suffix, ")")
             end
         end
         print(out, replacement)
