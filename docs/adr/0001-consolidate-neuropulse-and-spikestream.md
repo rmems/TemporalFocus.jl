@@ -371,15 +371,22 @@ migration.
 
 | Adapter | Behavior |
 |---|---|
-| `spike_times(train::SpikeTrain, neuron_id::Integer) -> Vector{Float64}` | Explicit single-neuron projection. `neuron_id` is required — there is no whole-train overload. |
-| `spike_times_by_neuron(train::SpikeTrain) -> Dict{Int,Vector{Float64}}` | Groups by neuron; IDs are preserved as keys. |
-| `spike_features_by_neuron(train; …)` | Per-neuron feature extraction; returns results keyed by neuron ID. |
-| `SpikeTrain(times::AbstractVector{<:Real}; neuron_id, value=1.0f0)` | Reverse direction. `neuron_id` is a required keyword. |
-| Same set for `TemporalBuffer`, **plus a required `current_time`** | See below. |
+| `spike_times(train::SpikeTrain, neuron_id::Integer; ignore_values::Bool=false) -> Vector{Float64}` | Explicit single-neuron projection. `neuron_id` is required — there is no whole-train overload. |
+| `spike_times_by_neuron(train::SpikeTrain; ignore_values::Bool=false) -> Dict{Int,Vector{Float64}}` | Groups by neuron; IDs are preserved as keys. |
+| `spike_features_by_neuron(train::SpikeTrain; t_start=nothing, t_end=nothing, max_density::Real=1000.0, ignore_values::Bool=false) -> Dict{Int,NamedTuple}` | For each neuron returns exactly `(count::Int, density::Float64, isi::NamedTuple, normalized::Vector{Float64})`; `isi` has the `(:mean, :std, :min, :max, :cv)` `Float64` fields and `normalized` is the four-element vector defined above. The window keywords are forwarded identically to the timestamp kernels. |
+| `burst_intervals_by_neuron(train::SpikeTrain; max_isi::Real=0.02, min_spikes::Int=3, ignore_values::Bool=false) -> Dict{Int,Vector{Tuple{Float64,Float64}}}` | The exported adapter named by the burst-interval decision below. Each tuple is `(t_first, t_last)` in the sorted per-neuron sequence. |
+| `spike_times(buffer::TemporalBuffer, neuron_id::Integer, current_time::Real; ignore_values::Bool=false) -> Vector{Float64}` | Buffer overload of the single-neuron projection. `current_time` is positional and required. |
+| `spike_times_by_neuron(buffer::TemporalBuffer, current_time::Real; ignore_values::Bool=false) -> Dict{Int,Vector{Float64}}` | Buffer overload of the grouped projection. |
+| `spike_features_by_neuron(buffer::TemporalBuffer, current_time::Real; t_start=nothing, t_end=nothing, max_density::Real=1000.0, ignore_values::Bool=false) -> Dict{Int,NamedTuple}` | Same result schema as the train overload, after applying the buffer window; `t_start`/`t_end` further restrict that selected set. |
+| `burst_intervals_by_neuron(buffer::TemporalBuffer, current_time::Real; max_isi::Real=0.02, min_spikes::Int=3, ignore_values::Bool=false) -> Dict{Int,Vector{Tuple{Float64,Float64}}}` | Buffer overload of the interval adapter, after applying the buffer window. |
+| `SpikeTrain(times::AbstractVector{<:Real}; neuron_id, value=1.0f0, check_precision::Symbol=:collisions)` | Reverse direction. `neuron_id` is a required keyword and the precision modes are fixed below. |
 
-Every projection and feature adapter validates that its selected events have finite
-timestamps **before** widening `Float32` to `Float64`. This applies to pre-existing
-`SpikeTrain` and `TemporalBuffer` values as well as to the reverse constructor: a caller
+Every projection and feature adapter validates that its candidate events have finite
+timestamps **before any window/feature filtering that could discard them** and before
+widening `Float32` to `Float64`. For the single-neuron overload, “candidate” means all
+stored events with the requested neuron ID; for the grouped overloads it means every
+stored event. This applies to pre-existing `SpikeTrain` and `TemporalBuffer` values as
+well as to the reverse constructor: a caller
 can construct `SpikeEvent(..., NaN32, ...)` or `SpikeEvent(..., Inf32, ...)` directly, so
 ingest-only checks are insufficient.
 
@@ -389,7 +396,9 @@ inside the window — which is why the existing [`prune!`](../../src/types.jl) t
 `current_time` explicitly. So a buffer adapter cannot "honor `buffer.window`" from the
 buffer alone: without a cutoff it would let stale events silently into feature
 calculations. Buffer adapters therefore take `current_time` as a required argument and
-reject it unless it is finite **before** selecting events. They then apply the same
+reject it unless it is finite. They validate all candidate event timestamps **before**
+applying the window predicate, so `NaN32`/`Inf32` cannot disappear as an ordinary
+out-of-window event. They then apply the same
 `(current_time - event.t) <= buffer.window` rule `prune!` uses, so an
 adapted buffer and a pruned one agree exactly. (Requiring callers to `prune!` first was
 considered and rejected: it mutates the caller's buffer and fails silently if skipped.)
@@ -413,8 +422,9 @@ settled here:
   holding a `SpikeTrain`; times are meaningful in the caller's own frame and survive
   re-sorting, filtering, and per-neuron grouping.
 
-This is an explicit gate on step 4: the adapter PR implements the interval form, not the
-permutation form.
+This is an explicit gate on step 4: the adapter PR exports
+`burst_intervals_by_neuron` with the signatures above and implements the interval form,
+not the permutation form.
 
 ---
 
@@ -526,7 +536,8 @@ Non-negotiable before the SpikeStream source is retired:
 - multi-neuron trains adapted per-neuron, asserting no cross-neuron ISI leakage
 - non-uniform `value` trains hitting the `ignore_values` guard
 - `TemporalBuffer` adapters: events outside `window` relative to `current_time` are
-  excluded, and the adapted result equals `prune!`-then-adapt exactly
+  excluded; a non-finite candidate event is rejected even when the window predicate
+  would otherwise discard it; and the adapted result equals `prune!`-then-adapt exactly
 - `windowed_spike_features` right-edge inclusion at the `nextfloat` boundary
 - zero-duration and negative-duration windows
 - `detect_bursts` index provenance after adaptation
@@ -565,8 +576,9 @@ result or remove `Printf` until open question 3 is answered.
 
 ## Migration sequence
 
-Each step is a separately reviewable PR. Steps 1–8 land before any repository is
-archived. Steps 9–11 are human/cross-repo actions outside this repository.
+Each implementation step is a separately reviewable PR. Steps 1–8 land before any
+repository is archived. Steps 9–12 are human/cross-repo/release actions outside the
+release-preparation PR.
 
 **Every implementation step carries its own boundary update.** Because each step lands
 on `main` independently, deferring the whole scope rewrite to one late PR would leave
@@ -582,14 +594,15 @@ text moves.
 | 1 | **This ADR** — inventory, dispositions, boundary decision | Owner accepts the boundary broadening and the UUID recommendation |
 | 2 | **Regenerate the canonical UUID** per `RELEASING.md` (`Project.toml`, `docs/Project.toml`, `benchmark/Project.toml`, and `Manifest.toml` via `Pkg.resolve()`); atomically update `RELEASING.md`'s UUID-hygiene section so it records the new UUID and no longer instructs a second regeneration | The audit found nothing dependent on `7f3c9f2a-…`; done **before** any import so `v0.2.0` ships the final identity and no consumer migrates twice |
 | 3 | Port SpikeStream feature kernels + `test/fixtures/spike_vectors.json`, `Statistics` inlined; **add spike-stream feature extraction to the Scope lists and naming policy and scope `REVIEW.md`'s return-type rule to permit derived `Float64` features in the same PR** | Frozen fixtures pass unmodified; `[deps]` still empty; boundary, naming, and reviewer type guidance match what `main` now ships |
-| 4 | Add `SpikeTrain` ↔ timestamp adapters + the full edge-case suite from [Precision policy](#precision-policy), including pre-built events with non-finite timestamps, non-finite buffer `current_time` values, and uniform non-unit values | Narrowing-collision, non-finite projection, and non-finite reference-time tests fail loudly without their guards and pass with them; every non-unit value requires `ignore_values=true` |
-| 5 | Port `ActivityRegion` + routing kernel, `LinearAlgebra` dropped, generic constants renamed to the decided `ROUTING_*` family; exclude `adapt_leak!` only when its destination or explicit retirement is decided, otherwise carry it temporarily as deprecated; rename `spike_density` only if accepted, otherwise retain the existing field name; drop `Printf` only if changed diagnostics formatting is accepted, otherwise preserve it; **add the routing kernel to the Scope lists in the same PR**, with the admissible-mutation limits | NeuroPulse's suite ports and passes; `adapt_leak!` tests are omitted only if its removal is decided, otherwise they remain; boundary text matches what `main` now ships; diagnostics formatting is decided and tested before `Printf` is removed; unresolved `adapt_leak!` and field-name decisions use the documented compatibility fallbacks below |
+| 4 | Add the exact `SpikeTrain`/`TemporalBuffer` adapter surface in [Adapters between the two data models](#adapters-between-the-two-data-models) + the full edge-case suite from [Precision policy](#precision-policy), including pre-built events with non-finite timestamps, non-finite buffer `current_time` values, and uniform non-unit values; **extend `AGENTS.md`'s naming policy in this same PR with the exact adapter family** `spike_times`, `spike_times_by_neuron`, `spike_features_by_neuron`, and `burst_intervals_by_neuron` | Signatures, keyword forwarding, result schemas, and interval returns match the contract; narrowing-collision, pre-filter non-finite projection, and non-finite reference-time tests fail loudly without their guards and pass with them; every non-unit value requires `ignore_values=true`; naming guidance matches the exported adapter surface |
+| 5 | Port `ActivityRegion` + routing kernel, `LinearAlgebra` dropped, generic constants renamed to the decided `ROUTING_*` family; exclude `adapt_leak!` only when its destination or explicit retirement is decided, otherwise carry it temporarily as deprecated; rename `spike_density` only if accepted, otherwise retain the existing field name; drop `Printf` only if changed diagnostics formatting is accepted, otherwise preserve it; **add the routing kernel to the Scope lists and extend the naming policy with the exact routing surface** `update_routing!`, `routing_diagnostics`, `save_state`, `load_state!`, and `default_inhibition_matrix` in the same PR (plus an explicit compatibility-only exception for `adapt_leak!` if it is carried), with the admissible-mutation limits | NeuroPulse's suite ports and passes; `adapt_leak!` tests are omitted only if its removal is decided, otherwise they remain; boundary and naming text match what `main` now ships; diagnostics formatting is decided and tested before `Printf` is removed; unresolved `adapt_leak!` and field-name decisions use the documented compatibility fallbacks below |
 | 6 | Port deprecated aliases, **preserving each binding's kind** — see below | Function aliases follow the mechanism selected in open question 5 and warn only if wrappers were selected; `LobeState` remains usable in `::`/`isa`; `NERO_ALPHA` remains arithmetic and binds to `ROUTING_ALPHA` |
-| 7 | Consolidated docs pass: README one-sentence lead, the full `REVIEW.md` checklist pass (preserving the derived-feature type exception landed in step 3), verification of the scoped `Float32` rule, `docs/src/`, and scope tests asserting the exported symbol set | Stated boundary matches shipped code exactly |
-| 8 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); complete the non-source [artifact disposition ledger](#non-source-artifact-disposition-ledger); bump to `0.2.0`, update `CHANGELOG.md`, **and update `RELEASING.md`'s first-registration procedure** from v0.1.0 to v0.2.0 (the UUID-hygiene section was already corrected atomically in step 2) | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix; every ledger row is complete |
+| 7 | Consolidated docs pass: update the README one-sentence lead **and its Interface Contract and Current API lists** for bare timestamp features, `SpikeTrain`/`TemporalBuffer` adapters, `ActivityRegion` routing inputs, statistical outputs, and every migrated export; perform the full `REVIEW.md` checklist pass (preserving the derived-feature type exception landed in step 3), verify the scoped `Float32` rule, update `docs/src/`, and add scope tests asserting the exported symbol set | README and site describe every shipped input/output shape and public export; stated boundary matches shipped code exactly |
+| 8 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); complete every non-source [artifact disposition ledger](#non-source-artifact-disposition-ledger) row assigned through step 8 and record the step-9/10 rows as pending with their owner/destination; bump to `0.2.0`, update `CHANGELOG.md`, **and update `RELEASING.md`'s first-registration procedure** from v0.1.0 to v0.2.0 (the UUID-hygiene section was already corrected atomically in step 2) | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix; every ledger row assigned through step 8 is complete and later rows have an explicit pending owner/destination |
 | 9 | Add redirect READMEs to `NeuroPulse.jl` and `SpikeStream.jl`; update `rmems/kinetic-signals` boundary docs to name `TemporalFocus.jl (spike features)`; land `rmems/Limen-Capital#9`, including its `brain/Project.toml`, README, and `docs/deps.md` updates | *Cross-repo; requires write access to those repos; all source redirects, kinetic-signals boundary updates, and the Limen-Capital dependency/docs migration must land before archiving* |
 | 10 | Migrate/triage open issues (NeuroPulse #40, #14; SpikeStream #27) and open PRs (NeuroPulse #41, SpikeStream #26) per rmems/.github#4 | Every open item has a documented destination |
-| 11 | **Archive** `NeuroPulse.jl` and `SpikeStream.jl` | Steps 8–10 complete, every artifact-ledger row is complete, `rmems/Limen-Capital#9` is closed by the landed dependency/docs migration, **and** the v0.2.0 upgrade path is published |
+| 11 | **Register and publish TemporalFocus v0.2.0 after the step-8 release-preparation PR has merged**; invoke Registrator only as this separate post-merge action, wait for the General-registry PR and TagBot, and verify the published package under the regenerated UUID | General resolves the regenerated UUID at `0.2.0`, the `v0.2.0` tag exists and identifies the registered source tree, a fresh registry-based install succeeds, and the hosted v0.2.0 upgrade guide is live |
+| 12 | **Archive** `NeuroPulse.jl` and `SpikeStream.jl` | Steps 8–11 complete, every artifact-ledger row is complete, `rmems/Limen-Capital#9` is closed by the landed dependency/docs migration, **and** the registered/tagged v0.2.0 release plus its upgrade path are publicly available |
 
 **Archiving is the last step and is a deliberate human action.** No automation in this
 workstream may archive, transfer, or delete a repository. Source repositories remain as
@@ -599,7 +612,7 @@ provenance and must never be deleted (rmems/.github#3, migration policy 9).
 
 This ledger assigns every inventoried non-source artifact to a numbered step. “Retire”
 means do not copy it into TemporalFocus; it remains in the source repository's immutable
-history and may disappear from active use only when step 11 archives that repository.
+history and may disappear from active use only when step 12 archives that repository.
 
 | Inventoried artifacts | Numbered disposition |
 |---|---|
@@ -612,8 +625,11 @@ history and may disappear from active use only when step 11 archives that reposi
 | Source-repository READMEs, AGENTS/REVIEW guidance, and remaining logos | **Step 9:** replace each active source README with the successor redirect; leave historical guidance/assets in the archived repository for provenance, not as consolidated policy. |
 | Open issues and PRs, including NeuroPulse Dependabot #41 and SpikeStream ImgBot #26 | **Step 10:** migrate, close, or supersede each with a documented destination before archiving. |
 
-Step 8's gate requires a checked-off copy of this ledger in the migration PR description;
-step 11 cannot proceed if any row is missing its recorded retain/migrate/retire result.
+Step 8's gate requires a copy of this ledger in the migration PR description with every
+row assigned through step 8 checked off. Rows assigned to steps 9 and 10 remain explicitly
+pending there, with their owner and destination recorded; they cannot be called complete
+before those steps run. Step 12 cannot proceed until **every** row, including the step-9
+and step-10 rows, has its completed retain/migrate/retire result recorded.
 
 ### Gate: `adapt_leak!` may not be removed into a void
 
@@ -694,7 +710,7 @@ No repository is archived before its supported upgrade path is published.
 | **Julia compat floor.** TemporalFocus targets 1.9–1.12 (+ macOS/Windows on 1.11); NeuroPulse's practice was **1.12-only**; SpikeStream tests `min`/`1`/`pre`. Imported code may not actually run on 1.9. | Validate the ported routing kernel on 1.9 in step 5 **before** claiming the compat range. Raise the floor deliberately if needed — do not discover it in a release. |
 | **Test-suite merge.** 583 + 899 + 245 = 1727 lines of tests across three conventions. | Merge as separate top-level `@testset`s per step; never rewrite an assertion while moving it. |
 | **Concurrent branches.** Eight sibling workstreams are touching this repository. | Keep each step's diff narrow; expect `README.md` / `CHANGELOG.md` conflicts and resolve additively. |
-| **Premature archiving** strands Limen-Capital's pin, active dependency docs, or open issues. | Step 11 is gated on steps 8–10, completion of the artifact ledger, and the landed `rmems/Limen-Capital#9` dependency/docs migration; it remains a human action. |
+| **Premature archiving** strands Limen-Capital's pin, active dependency docs, open issues, or consumers waiting for the successor release. | Step 12 is gated on steps 8–11, completion of the artifact ledger, the landed `rmems/Limen-Capital#9` dependency/docs migration, and a registry-resolvable/tagged v0.2.0; it remains a human action. |
 
 ---
 
@@ -722,7 +738,7 @@ No repository is archived before its supported upgrade path is published.
    wrapped.
 6. **Confirm** that Limen-Capital's dependency migration is owned by
    `rmems/Limen-Capital#9`. It does not block implementation in this repository, but its
-   UUID/source/revision plus README and `docs/deps.md` updates are a hard step-11 archive
+   UUID/source/revision plus README and `docs/deps.md` updates are a hard step-12 archive
    gate.
 
 ---
