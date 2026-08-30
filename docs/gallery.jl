@@ -395,6 +395,10 @@ a fenced block.
 function _shift_headings(md::AbstractString, shift::Integer)
     out = IOBuffer()
     fence = nothing  # complete currently open fence delimiter, or nothing
+    open_fence_pattern =
+        r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]{0,3})(`{3,}|~{3,})(.*)$"
+    close_fence_pattern =
+        r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]*)(`{3,}|~{3,})(.*)$"
     lines = split(md, '\n'; keepempty = true)
     i = 1
     while i <= length(lines)
@@ -402,7 +406,7 @@ function _shift_headings(md::AbstractString, shift::Integer)
         # CommonMark containers can nest in either order and to arbitrary depth.
         # Repeating the container atom recognizes, for example, `- > ```@example`
         # and `> 1. > ```@docs` without treating generated directives as executable.
-        m = match(r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*)(`{3,}|~{3,})(.*)$", line)
+        m = match(fence === nothing ? open_fence_pattern : close_fence_pattern, line)
         if m !== nothing
             prefix, marker, info = m.captures[1], m.captures[2], m.captures[3]
             if fence === nothing
@@ -506,12 +510,14 @@ _reference_label(label::AbstractString) =
 function _summary_code_mask(lines::Vector{<:AbstractString})
     mask = falses(length(lines))
     fence = nothing
-    fence_pattern =
-        r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*)(`{3,}|~{3,})(.*)$"
+    open_fence_pattern =
+        r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]{0,3})(`{3,}|~{3,})(.*)$"
+    close_fence_pattern =
+        r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]*)(`{3,}|~{3,})(.*)$"
     indented_pattern =
         r"^(?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ ]{4}"
     for (i, line) in pairs(lines)
-        m = match(fence_pattern, line)
+        m = match(fence === nothing ? open_fence_pattern : close_fence_pattern, line)
         if fence === nothing
             if m !== nothing
                 mask[i] = true
@@ -531,10 +537,35 @@ function _summary_code_mask(lines::Vector{<:AbstractString})
     return mask
 end
 
+"Byte-index ranges occupied by complete inline-code spans on one Markdown line."
+function _inline_code_ranges(line::AbstractString)
+    source = String(line)
+    ranges = Tuple{Int,Int}[]
+    opener = nothing
+    for m in eachmatch(r"`+", source)
+        width = ncodeunits(m.match)
+        if opener === nothing
+            opener = (m.offset, width)
+        elseif width == opener[2]
+            push!(ranges, (opener[1], m.offset + width - 1))
+            opener = nothing
+        end
+    end
+    return ranges
+end
+
+"Whether a regex match overlaps one of the supplied byte-index ranges."
+function _overlaps_ranges(m::RegexMatch, ranges::Vector{Tuple{Int,Int}})
+    first = m.offset
+    last = m.offset + ncodeunits(m.match) - 1
+    return any(first <= stop && last >= start for (start, stop) in ranges)
+end
+
 "Rebase inline links and one reference definition on a non-code line."
 function _rebase_summary_line(line::AbstractString, image_labels::Set{String},
                               result::ResultSet, root::AbstractString)
     source = String(line)
+    code_ranges = _inline_code_ranges(source)
     pattern = r"(!?\[[^\]\n]*\])\(([^)\s]+)([^)]*)\)"
     out = IOBuffer()
     cursor = firstindex(source)
@@ -542,10 +573,12 @@ function _rebase_summary_line(line::AbstractString, image_labels::Set{String},
         m.offset > cursor && print(out, SubString(source, cursor, prevind(source, m.offset)))
         label, raw_dest, suffix = m.captures
         replacement = m.match
-        rebased = _rebase_summary_destination(
-            raw_dest, startswith(label, "!"), result, root)
-        if rebased !== nothing
-            replacement = string(label, "(", rebased, suffix, ")")
+        if !_overlaps_ranges(m, code_ranges)
+            rebased = _rebase_summary_destination(
+                raw_dest, startswith(label, "!"), result, root)
+            if rebased !== nothing
+                replacement = string(label, "(", rebased, suffix, ")")
+            end
         end
         print(out, replacement)
         cursor = nextind(source, m.offset, length(m.match))
@@ -573,10 +606,17 @@ function _rebase_summary_links(md::AbstractString, result::ResultSet, root::Abst
     image_labels = Set{String}()
     for (i, line) in pairs(lines)
         code[i] && continue
+        inline_code = _inline_code_ranges(line)
         for m in eachmatch(r"!\[[^\]\n]*\]\[([^\]\n]+)\]", line)
+            _overlaps_ranges(m, inline_code) && continue
             push!(image_labels, _reference_label(m.captures[1]))
         end
         for m in eachmatch(r"!\[([^\]\n]+)\]\[\]", line)
+            _overlaps_ranges(m, inline_code) && continue
+            push!(image_labels, _reference_label(m.captures[1]))
+        end
+        for m in eachmatch(r"!\[([^\]\n]+)\](?![\[(])", line)
+            _overlaps_ranges(m, inline_code) && continue
             push!(image_labels, _reference_label(m.captures[1]))
         end
     end

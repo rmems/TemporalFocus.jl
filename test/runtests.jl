@@ -859,6 +859,14 @@ using Random
             @test !occursin("```jldoctest", doctest)
             @test occursin("```text", doctest)
 
+            indented_directives = Gal._shift_headings(
+                "   ```@eval\n1 + 1\n   ```\n\n10. ```@example\n    2 + 2\n    ```\n",
+                4,
+            )
+            @test !occursin("@eval", indented_directives)
+            @test !occursin("@example", indented_directives)
+            @test count("```text", indented_directives) == 2
+
             # A shorter delimiter inside a longer fence is content, not a
             # closer. The later directive must still be neutralized.
             mixed_lengths = Gal._shift_headings(
@@ -891,6 +899,8 @@ using Random
                 "[reference][metrics] ![reference plot][figure]\n\n" *
                 "[metrics]: metrics.csv?download=1\n" *
                 "[figure]: <figure.png> \"generated figure\"\n\n" *
+                "![shortcut]\n[shortcut]: figure.png\n\n" *
+                "Literal example: `[inline sample](metrics.csv)`.\n\n" *
                 "```text\n[code sample](metrics.csv)\n[code-ref]: metrics.csv\n```\n\n" *
                 "    [indented sample](metrics.csv)\n")
 
@@ -904,6 +914,8 @@ using Random
             @test occursin("metrics.csv?download=1", page)
             @test occursin("[figure]: https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
             @test occursin("figure.png \"generated figure\"", page)
+            @test occursin("[shortcut]: https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
+            @test occursin("`[inline sample](metrics.csv)`", page)
             @test occursin("[code sample](metrics.csv)", page)
             @test occursin("[code-ref]: metrics.csv", page)
             @test occursin("    [indented sample](metrics.csv)", page)
