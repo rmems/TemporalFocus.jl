@@ -1,6 +1,6 @@
 # REVIEW.md
 
-> Last updated: 2026-07-05
+> Last updated: 2026-08-30
 
 ## Review scope
 
@@ -23,6 +23,7 @@ See [README Scope](README.md#scope) for the full boundary documentation.
 - Cross-modal projector weights between SNN (Spiking Neural Network) and LLM spaces
 - Runtime execution or event-loop scheduling
 - LLM-side fusion logic
+- Finance/HFT semantics — order books, positions, PnL, market data, trading signals
 
 If a PR introduces features outside this scope, request scope clarification before reviewing the implementation.
 
@@ -37,8 +38,10 @@ If a PR introduces features outside this scope, request scope clarification befo
 ### Boundary enforcement
 
 - Does the change stay within TemporalFocus's documented scope?
-- Does it introduce STDP, plasticity, tokenization, embeddings, or transformer logic?
-- If so, does it belong in a dedicated package instead?
+- Does it introduce STDP, plasticity, tokenization, embeddings, transformer logic, or
+  finance/HFT semantics?
+- If so, does it belong in a dedicated package or a downstream domain application such
+  as `rmems/Limen-Capital` or `rmems/DendriteTrader.jl` instead?
 
 ### Type stability
 

@@ -182,7 +182,7 @@ load-bearing for future boundary enforcement and must be stated in the module do
 
 | Reference | Location | Disposition |
 |---|---|---|
-| `TemporalFocus` UUID + `Limen-Neural/NeuroPulse.jl` source pin | `rmems/Limen-Capital` `brain/Project.toml`, `docs/deps.md`, `README.md` | **Cross-repo follow-up** under `rmems/Limen-Capital#9`. Not changed by this workstream. |
+| `TemporalFocus` UUID + `Limen-Neural/NeuroPulse.jl` source pin | `rmems/Limen-Capital` `brain/Project.toml`, `docs/deps.md`, `README.md` | **Cross-repo follow-up in step 9** under `rmems/Limen-Capital#9`: update the UUID, source URL, revision, README, and dependency guide together. Archiving is gated on that issue landing. |
 | Vendored fork of the routing kernel (`NeroOrchestrator`, `update_relevance!`, `NERO_*`) | `rmems/Limen-Capital` `brain/synapse_conductor.jl`, consumed by `brain/sonar_probe.jl` | **Cross-repo follow-up** under `rmems/Limen-Capital#9`: de-vendor onto the consolidated package. Drifted from the generalized `ActivityRegion` API; keeping the deprecated aliases makes that a rename-free change. |
 | SpikeStream boundary contract | `rmems/kinetic-signals` `AGENTS.md`, `README.md`, `REVIEW.md`, `docs/boundary-matrix.md` | **Cross-repo follow-up in step 9:** repoint "SpikeStream.jl" to "TemporalFocus.jl (spike features)". The no-FFI, fixture-only integration contract is unchanged. Archiving is gated on this update. |
 | `spikestream-jl-*` dataset cards, manifests, JSONL | `rmems/operation-prometheus` | **Leave as-is.** These are historical trajectory datasets keyed to the source repos. Archiving (not deleting) keeps their URLs resolvable. |
@@ -483,13 +483,31 @@ The default deliberately does **not** promise that ingest is lossless. Ordinary 
 values — `0.1`, `0.2` — are altered by narrowing without merging or exceeding `2^24`, so
 `:collisions` accepts them and their ISIs shift in the last few digits. That is inherent
 to a `Float32` data model, not a bug the guard can remove: `:strict` would reject almost
-every real decimal timestamp. So the guarantee is scoped precisely — **the default
-prevents the failures that change results qualitatively** (zero ISIs, inflated burst
-counts, reordering), and `:strict` is available when bit-level parity matters. Sub-ulp
-rounding under `:collisions` is documented, not prevented.
+every real decimal timestamp. So the guarantee is scoped precisely: the default prevents
+distinct timestamps from collapsing into zero ISIs (and preserves their strict order),
+but ordinary narrowing can still move an ISI across a caller-selected threshold and
+therefore change burst classification or counts. Only `:strict` promises parity with the
+`Float64` pipeline. Sub-ulp rounding and threshold crossings under `:collisions` are
+documented, not prevented.
 
-**Convenience.** Provide `Float32` wrappers (e.g. `normalized_feature_vector_f32`)
-rather than changing any existing return type.
+**Convenience surface — exact, not an open-ended family.** Step 3 exports exactly one
+wrapper:
+
+```julia
+normalized_feature_vector_f32(
+    spike_times::AbstractVector{<:Real};
+    t_start=nothing,
+    t_end=nothing,
+    max_density::Real=1000.0,
+)::Vector{Float32}
+```
+
+It delegates to `normalized_feature_vector` and converts the final four-element vector;
+the six parity APIs above keep their existing `Float64` returns. Step 3 adds this name to
+`AGENTS.md`'s feature-extraction naming exception and tests its export, signature, return
+type, keyword forwarding, and elementwise conversion. Step 4 adds the corresponding
+`SpikeTrain`/`TemporalBuffer` adapter path by projecting timestamps through the contracts
+above; it does not introduce any additional `_f32` public name.
 
 ### Required edge-case tests
 
@@ -565,14 +583,34 @@ text moves.
 | 5 | Port `ActivityRegion` + routing kernel, `LinearAlgebra` dropped, generic constants renamed to the decided `ROUTING_*` family; exclude `adapt_leak!` only when its destination or explicit retirement is decided, otherwise carry it temporarily as deprecated; rename `spike_density` only if accepted, otherwise retain the existing field name; drop `Printf` only if changed diagnostics formatting is accepted, otherwise preserve it; **add the routing kernel to the Scope lists in the same PR**, with the admissible-mutation limits | NeuroPulse's suite ports and passes; `adapt_leak!` tests are omitted only if its removal is decided, otherwise they remain; boundary text matches what `main` now ships; diagnostics formatting is decided and tested before `Printf` is removed; unresolved `adapt_leak!` and field-name decisions use the documented compatibility fallbacks below |
 | 6 | Port deprecated aliases, **preserving each binding's kind** — see below | Function aliases follow the mechanism selected in open question 5 and warn only if wrappers were selected; `LobeState` remains usable in `::`/`isa`; `NERO_ALPHA` remains arithmetic and binds to `ROUTING_ALPHA` |
 | 7 | Consolidated docs pass: README one-sentence lead, `REVIEW.md` checklist, verification of the scoped `Float32` rule landed in step 3, `docs/src/`, and scope tests asserting the exported symbol set | Stated boundary matches shipped code exactly |
-| 8 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); bump to `0.2.0`, update `CHANGELOG.md`, **and update `RELEASING.md`'s first-registration procedure** from v0.1.0 to v0.2.0 (the UUID-hygiene section was already corrected atomically in step 2) | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix |
-| 9 | Add redirect READMEs to `NeuroPulse.jl` and `SpikeStream.jl`; update `rmems/kinetic-signals` boundary docs to name `TemporalFocus.jl (spike features)` | *Cross-repo; requires write access to those repos; all three documentation updates must land before archiving* |
+| 8 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); complete the non-source [artifact disposition ledger](#non-source-artifact-disposition-ledger); bump to `0.2.0`, update `CHANGELOG.md`, **and update `RELEASING.md`'s first-registration procedure** from v0.1.0 to v0.2.0 (the UUID-hygiene section was already corrected atomically in step 2) | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix; every ledger row is complete |
+| 9 | Add redirect READMEs to `NeuroPulse.jl` and `SpikeStream.jl`; update `rmems/kinetic-signals` boundary docs to name `TemporalFocus.jl (spike features)`; land `rmems/Limen-Capital#9`, including its `brain/Project.toml`, README, and `docs/deps.md` updates | *Cross-repo; requires write access to those repos; all source redirects, kinetic-signals boundary updates, and the Limen-Capital dependency/docs migration must land before archiving* |
 | 10 | Migrate/triage open issues (NeuroPulse #40, #14; SpikeStream #27) and open PRs (NeuroPulse #41, SpikeStream #26) per rmems/.github#4 | Every open item has a documented destination |
-| 11 | **Archive** `NeuroPulse.jl` and `SpikeStream.jl` | Steps 8–10 complete **and** the v0.2.0 upgrade path is published |
+| 11 | **Archive** `NeuroPulse.jl` and `SpikeStream.jl` | Steps 8–10 complete, every artifact-ledger row is complete, `rmems/Limen-Capital#9` is closed by the landed dependency/docs migration, **and** the v0.2.0 upgrade path is published |
 
 **Archiving is the last step and is a deliberate human action.** No automation in this
 workstream may archive, transfer, or delete a repository. Source repositories remain as
 provenance and must never be deleted (rmems/.github#3, migration policy 9).
+
+### Non-source artifact disposition ledger
+
+This ledger assigns every inventoried non-source artifact to a numbered step. “Retire”
+means do not copy it into TemporalFocus; it remains in the source repository's immutable
+history and may disappear from active use only when step 11 archives that repository.
+
+| Inventoried artifacts | Numbered disposition |
+|---|---|
+| NeuroPulse tests; SpikeStream tests and frozen fixture | **Steps 3 and 5:** port with their owning kernels; copy `spike_vectors.json` verbatim in step 3. |
+| NeuroPulse examples; SpikeStream benchmark project and runner | **Step 8:** port into the consolidated examples/benchmark trees and validate against the final package identity. |
+| NeuroPulse `docs/src/`, `docs/make.jl`, `docs/Project.toml`, manifest, and logo | **Steps 7–8:** migrate still-applicable prose/API material into the existing TemporalFocus site; resolve docs dependencies under the canonical UUID. The source logo is retained only if the consolidated site uses it, otherwise explicitly retire it in the step-8 ledger check. |
+| NeuroPulse duplicated flat docs; `.devcontainer/`; `.devin/blueprint.yaml` | **Step 8:** explicitly retire for the rationales in [What does not migrate](#what-does-not-migrate); no copy is permitted. |
+| NeuroPulse `ci`, `documentation`, and `format` workflows; Dependabot configuration; SpikeStream `ci` and `codecov` workflows and `.markdownlint.json` | **Steps 3, 5, and 8:** exercise imported code through TemporalFocus's existing matrix as each kernel lands; in step 8 record these source-repository configurations as retired because the consolidated repository's CI, coverage, formatting, dependency-update, and Markdown policies are authoritative. Do not copy competing automation. |
+| NeuroPulse and SpikeStream license files | **Step 8:** verify imported files retain compatible provenance and are covered by TemporalFocus's top-level `LICENSE`, `LICENSE-MIT`, and `LICENSE-APACHE`; retain the source license files in source history, but do not create duplicate active license sets. |
+| Source-repository READMEs, AGENTS/REVIEW guidance, and remaining logos | **Step 9:** replace each active source README with the successor redirect; leave historical guidance/assets in the archived repository for provenance, not as consolidated policy. |
+| Open issues and PRs, including NeuroPulse Dependabot #41 and SpikeStream ImgBot #26 | **Step 10:** migrate, close, or supersede each with a documented destination before archiving. |
+
+Step 8's gate requires a checked-off copy of this ledger in the migration PR description;
+step 11 cannot proceed if any row is missing its recorded retain/migrate/retire result.
 
 ### Gate: `adapt_leak!` may not be removed into a void
 
@@ -653,7 +691,7 @@ No repository is archived before its supported upgrade path is published.
 | **Julia compat floor.** TemporalFocus targets 1.9–1.12 (+ macOS/Windows on 1.11); NeuroPulse's practice was **1.12-only**; SpikeStream tests `min`/`1`/`pre`. Imported code may not actually run on 1.9. | Validate the ported routing kernel on 1.9 in step 5 **before** claiming the compat range. Raise the floor deliberately if needed — do not discover it in a release. |
 | **Test-suite merge.** 583 + 899 + 245 = 1727 lines of tests across three conventions. | Merge as separate top-level `@testset`s per step; never rewrite an assertion while moving it. |
 | **Concurrent branches.** Eight sibling workstreams are touching this repository. | Keep each step's diff narrow; expect `README.md` / `CHANGELOG.md` conflicts and resolve additively. |
-| **Premature archiving** strands Limen-Capital's pin or open issues. | Step 11 is gated on steps 8–10 and is a human action. |
+| **Premature archiving** strands Limen-Capital's pin, active dependency docs, or open issues. | Step 11 is gated on steps 8–10, completion of the artifact ledger, and the landed `rmems/Limen-Capital#9` dependency/docs migration; it remains a human action. |
 
 ---
 
@@ -678,7 +716,9 @@ No repository is archived before its supported upgrade path is published.
    aliases are already settled — they keep their binding kind and are documented, not
    wrapped.
 6. **Confirm** that Limen-Capital's dependency migration is owned by
-   `rmems/Limen-Capital#9` and is not blocking on this repository.
+   `rmems/Limen-Capital#9`. It does not block implementation in this repository, but its
+   UUID/source/revision plus README and `docs/deps.md` updates are a hard step-11 archive
+   gate.
 
 ---
 
@@ -688,12 +728,12 @@ No repository is archived before its supported upgrade path is published.
 |---|---|
 | Boundary documents the deterministic, self-contained routing kernel with bounded mutation and excludes runtime/learning/dense/finance | **Decided here**; the code and README/AGENTS text land together at step 5 and are consolidated at step 7 |
 | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` succeed | Passing today; re-gated at step 8 |
-| Every inventoried artifact retained, migrated, or explicitly retired with rationale | **Planned** — source symbols and major artifacts are dispositioned here; detailed retention/migration/retirement rationales for CI workflows, Dependabot configuration, licenses, and documentation still land in the implementation steps |
+| Every inventoried artifact retained, migrated, or explicitly retired with rationale | **Dispositioned here** in the numbered [artifact ledger](#non-source-artifact-disposition-ledger); steps 3, 5, and 8 execute it, and steps 8/11 fail closed on any incomplete row |
 | Imported behavior has parity tests or documented intentional changes | **Planned** (steps 3, 5); intentional changes recorded here |
 | Timestamp adaptation and precision edge-case tests | **Specified** here; land at step 4 |
 | Only one active package UUID/name pair | **Decided** here; identity set at step 2, shipped at step 8 |
 | Versioned migration guide and upgrade matrix | **Drafted** here as [Upgrade matrix](#upgrade-matrix); published at step 8 |
-| No active docs instruct users to depend on superseded repositories | Steps 7–9 |
+| No active docs instruct users to depend on superseded repositories | Steps 7–9, including Limen-Capital README/`docs/deps.md`; hard archive gate |
 | `NeuroPulse.jl` / `SpikeStream.jl` archived with successor links | Step 11, human action, explicitly **not** automated |
 | README explains the whole accomplishment in one sentence before modules | Step 7 |
 
