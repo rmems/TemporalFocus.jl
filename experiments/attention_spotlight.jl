@@ -145,10 +145,11 @@ function build_stream(cfg)
         end
     end
 
-    # Tick through the horizon inclusively; the pair-level check below decides
-    # which of the last ticks actually fit, so a background pair that ends
-    # inside `t_end` is never dropped just because the period does not divide it.
-    n_ticks = floor(Int, cfg.t_end / cfg.background_period)
+    # Tick through the horizon inclusively, with room for a tick that negative
+    # jitter pulls back inside it; the pair-level check below decides which of
+    # the last ticks actually fit, so a background pair that ends inside `t_end`
+    # is never dropped just because the period does not divide the horizon.
+    n_ticks = floor(Int, (cfg.t_end + cfg.jitter) / cfg.background_period)
     for tick in 0:n_ticks
         t = Float32(tick) * cfg.background_period + _jitter(1_000 + tick, cfg.jitter)
         (0.0f0 <= t && t + cfg.background_lag <= cfg.t_end) || continue

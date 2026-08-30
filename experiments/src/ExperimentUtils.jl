@@ -18,7 +18,6 @@ the root `Project.toml`.
 """
 module ExperimentUtils
 
-using Printf
 using TOML
 
 export repo_root, result_dir, figure_path, write_config, write_metrics, write_summary
@@ -65,7 +64,7 @@ end
 
 _csv_field(x::Integer) = string(x)
 _csv_field(x::Bool) = x ? "true" : "false"
-_csv_field(x::AbstractFloat) = @sprintf("%.6f", x)
+_csv_field(x::AbstractFloat) = string(x)
 function _csv_field(x)
     s = string(x)
     return any(c -> c in (',', '"', '\n'), s) ? '"' * replace(s, '"' => "\"\"") * '"' : s
