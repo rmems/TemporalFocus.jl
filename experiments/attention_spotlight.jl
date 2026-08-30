@@ -30,8 +30,11 @@ root dependency).
 function ensure_environment()
     project = joinpath(EXPERIMENTS_DIR, "Project.toml")
     Base.active_project() == project || Pkg.activate(EXPERIMENTS_DIR)
+    temporal_focus_source = Base.find_package("TemporalFocus")
+    expected_source = joinpath(REPO_ROOT, "src", "TemporalFocus.jl")
     needs_setup = !isfile(joinpath(EXPERIMENTS_DIR, "Manifest.toml")) ||
-                  Base.find_package("TemporalFocus") === nothing ||
+                  temporal_focus_source === nothing ||
+                  realpath(temporal_focus_source) != realpath(expected_source) ||
                   Base.find_package("CairoMakie") === nothing
     if needs_setup
         @info "Instantiating the experiments environment (first run may take a few minutes)"
@@ -226,7 +229,7 @@ function sample_times(cfg)
     # The small slack absorbs Float32 division error for horizons that *are*
     # exact multiples of the step (4.8f0 / 0.02f0 is not exactly 240).
     n_grid = floor(Int, cfg.t_end / cfg.sample_dt + 1.0f-4)
-    times = Float32[min(Float32(step) * cfg.sample_dt, cfg.t_end) for step in 0:max(n_grid, 1)]
+    times = Float32[min(Float32(step) * cfg.sample_dt, cfg.t_end) for step in 0:n_grid]
     if last(times) != cfg.t_end
         push!(times, cfg.t_end)
     end
@@ -294,7 +297,7 @@ function replay(cfg, events)
             top1_neuron = peak
             top1_attention = peak_attention
             top1_share = shares[peak]
-            runner_up = 0.0f0
+            runner_up = length(shares) == 1 ? 0.0f0 : -Inf32
             for (i, share) in pairs(shares)
                 i == peak && continue
                 share > runner_up && (runner_up = share)
