@@ -18,8 +18,9 @@ julia --project=experiments -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiat
 `Pkg.develop(path=".")` points the experiment environment at the working copy of
 TemporalFocus, so experiments always run against the checked-out source.
 
-The experiment environment needs Julia 1.10+ (CairoMakie); the package itself
-still supports Julia 1.9.
+The experiment environment supports Julia 1.9+, matching the package. Its
+CairoMakie compatibility range (0.12–0.15) lets `Pkg` select a release that
+supports the active Julia version.
 
 ## Running
 
