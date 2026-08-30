@@ -3,6 +3,7 @@
 using TemporalFocus
 using Test
 using Random
+using TOML
 
 # The experiment harness depends only on standard libraries, so the artifact
 # contract used by experiments/ is covered here without instantiating
@@ -646,6 +647,18 @@ end
                     Dict("provenance" => Dict("git_commit" => "abc123")),
                 )
                 @test occursin("git_commit = \"abc123\"", read(supplied, String))
+
+                # Non-finite floating-point sentinels stay TOML floats rather
+                # than being silently converted to strings.
+                nonfinite = write_config(
+                    "smoke-slug",
+                    Dict("nan" => NaN32, "pos_inf" => Inf32, "neg_inf" => -Inf),
+                )
+                parsed = TOML.parsefile(nonfinite)
+                @test parsed["nan"] isa AbstractFloat
+                @test isnan(parsed["nan"])
+                @test parsed["pos_inf"] == Inf
+                @test parsed["neg_inf"] == -Inf
             end
 
             @testset "write_metrics" begin
