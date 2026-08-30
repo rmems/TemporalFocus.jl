@@ -109,6 +109,8 @@ activity-routing kernel and spike-stream feature extraction:
   weight update
 - tokenization, embeddings, dense/transformer attention, gating, LLM fusion
 - cross-modal projector weights between SNN and LLM spaces
+- encoding or decoding logic
+- neuromodulatory signals
 - runtime execution, event-loop scheduling, telemetry ingestion, deployment
   supervision, or hardware control
 - distillation
@@ -387,7 +389,8 @@ inside the window — which is why the existing [`prune!`](../../src/types.jl) t
 `current_time` explicitly. So a buffer adapter cannot "honor `buffer.window`" from the
 buffer alone: without a cutoff it would let stale events silently into feature
 calculations. Buffer adapters therefore take `current_time` as a required argument and
-apply the same `(current_time - event.t) <= buffer.window` rule `prune!` uses, so an
+reject it unless it is finite **before** selecting events. They then apply the same
+`(current_time - event.t) <= buffer.window` rule `prune!` uses, so an
 adapted buffer and a pruned one agree exactly. (Requiring callers to `prune!` first was
 considered and rejected: it mutates the caller's buffer and fails silently if skipped.)
 
@@ -558,7 +561,7 @@ text moves.
 | 1 | **This ADR** — inventory, dispositions, boundary decision | Owner accepts the boundary broadening and the UUID recommendation |
 | 2 | **Regenerate the canonical UUID** per `RELEASING.md` (`Project.toml`, `docs/Project.toml`, `benchmark/Project.toml`, and `Manifest.toml` via `Pkg.resolve()`); atomically update `RELEASING.md`'s UUID-hygiene section so it records the new UUID and no longer instructs a second regeneration | The audit found nothing dependent on `7f3c9f2a-…`; done **before** any import so `v0.2.0` ships the final identity and no consumer migrates twice |
 | 3 | Port SpikeStream feature kernels + `test/fixtures/spike_vectors.json`, `Statistics` inlined; **add spike-stream feature extraction to the Scope lists and naming policy in the same PR** | Frozen fixtures pass unmodified; `[deps]` still empty; boundary and naming text match what `main` now ships |
-| 4 | Add `SpikeTrain` ↔ timestamp adapters + the full edge-case suite from [Precision policy](#precision-policy), including pre-built events with non-finite timestamps and uniform non-unit values | Narrowing-collision and non-finite projection tests fail loudly without their guards and pass with them; every non-unit value requires `ignore_values=true` |
+| 4 | Add `SpikeTrain` ↔ timestamp adapters + the full edge-case suite from [Precision policy](#precision-policy), including pre-built events with non-finite timestamps, non-finite buffer `current_time` values, and uniform non-unit values | Narrowing-collision, non-finite projection, and non-finite reference-time tests fail loudly without their guards and pass with them; every non-unit value requires `ignore_values=true` |
 | 5 | Port `ActivityRegion` + routing kernel, `LinearAlgebra` dropped, generic constants renamed to the decided `ROUTING_*` family; exclude `adapt_leak!` only when its destination or explicit retirement is decided, otherwise carry it temporarily as deprecated; rename `spike_density` only if accepted, otherwise retain the existing field name; drop `Printf` only if changed diagnostics formatting is accepted, otherwise preserve it; **add the routing kernel to the Scope lists in the same PR**, with the admissible-mutation limits | NeuroPulse's suite ports and passes; `adapt_leak!` tests are omitted only if its removal is decided, otherwise they remain; boundary text matches what `main` now ships; diagnostics formatting is decided and tested before `Printf` is removed; unresolved `adapt_leak!` and field-name decisions use the documented compatibility fallbacks below |
 | 6 | Port deprecated aliases, **preserving each binding's kind** — see below | Function aliases follow the mechanism selected in open question 5 and warn only if wrappers were selected; `LobeState` remains usable in `::`/`isa`; `NERO_ALPHA` remains arithmetic and binds to `ROUTING_ALPHA` |
 | 7 | Consolidated docs pass: README one-sentence lead, `REVIEW.md` checklist, verification of the scoped `Float32` rule landed in step 3, `docs/src/`, and scope tests asserting the exported symbol set | Stated boundary matches shipped code exactly |
@@ -631,7 +634,7 @@ its identity exactly once; there is no second transition.
 | Consumer | Today | After v0.2.0 | Break? |
 |---|---|---|---|
 | **TemporalFocus v0.1.0 consumers** | `TemporalFocus` @ `7f3c9f2a-…`, attention API | `TemporalFocus` @ `<canonical>`, same API, plus features + routing | **API: no**, purely additive. **UUID: yes.** The consumer audit, including Git URLs and fixed revisions, found no current consumer pinned to this identity; lack of tags or registration alone would not make a Git package unpinnable. |
-| **NeuroPulse consumers** (`rmems/Limen-Capital`) | `TemporalFocus` @ `b7e4c3f2-…`, `[sources]` → `Limen-Neural/NeuroPulse.jl` @ `40e39206…`; loaded optionally, routing actually vendored | `TemporalFocus` @ `<canonical>`, `[sources]` → `rmems/TemporalFocus.jl` **with `rev` replaced by a consolidated commit (or dropped in favour of the `v0.2.0` tag)**; `update_relevance!` etc. keep working with a deprecation warning | **Yes, three:** UUID, source URL, **and the `rev` pin** must change — leaving `rev = "40e39206…"` in place would either fail to resolve or, if history is imported, check out the old NeuroPulse tree and its `b7e4c3f2-…` identity instead of consolidated v0.2.0; **`adapt_leak!` is removed** and must be re-sourced from wherever it is rehomed. Low urgency in practice — the `rev` pin is frozen and the load is behind a `try`, so nothing breaks until they choose to de-vendor. |
+| **NeuroPulse consumers** (`rmems/Limen-Capital`) | `TemporalFocus` @ `b7e4c3f2-…`, `[sources]` → `Limen-Neural/NeuroPulse.jl` @ `40e39206…`; loaded optionally, routing actually vendored | `TemporalFocus` @ `<canonical>`, `[sources]` → `rmems/TemporalFocus.jl` **with `rev` replaced by a consolidated commit (or dropped in favour of the `v0.2.0` tag)**; `update_relevance!` etc. keep working and warn only if wrappers are selected in open question 5, otherwise their deprecation is documentation-only; `adapt_leak!` follows the decided replacement/retirement path or remains temporarily deprecated while that decision is open | **Yes, three:** UUID, source URL, **and the `rev` pin** must change — leaving `rev = "40e39206…"` in place would either fail to resolve or, if history is imported, check out the old NeuroPulse tree and its `b7e4c3f2-…` identity instead of consolidated v0.2.0. Any decided `adapt_leak!` removal adds its documented replacement or explicit retirement; otherwise compatibility is retained temporarily. Low urgency in practice — the `rev` pin is frozen and the load is behind a `try`, so nothing breaks until they choose to de-vendor. |
 | **SpikeStream consumers** | `SpikeStream` @ `a3c7f1e2-…`, tag `v0.1.0` | `using TemporalFocus` @ `<canonical>`; function names, signatures, and `Float64` return types unchanged | **Yes, one:** package name + UUID. No API change. |
 | **`rmems/kinetic-signals`** (Rust) | Fixture-parity contract with `SpikeStream.jl`, no FFI | Same fixtures, now under `TemporalFocus.jl` | Docs-only. Output ranges are unchanged and remain a contract. |
 
