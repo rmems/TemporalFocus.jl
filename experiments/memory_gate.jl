@@ -502,7 +502,7 @@ axislegend(ax_slice_t; position = :lt, framevisible = false, labelsize = 10, pat
 Legend(fig[5, 1:6],
     [PolyElement(color = parse(RGBf, REGIME_COLORS[k]), strokecolor = :white, strokewidth = 1)
      for k in 1:length(REGIMES)],
-    ["$(REGIME_LABELS[k]) — $(round(100 * regime_counts[k] / length(regime_map); digits = 1))% of plane"
+    ["$(REGIME_LABELS[k]) — $(round(100 * regime_counts[k] / length(regime_map); digits = 1))% of sampled log grid"
      for k in 1:length(REGIMES)],
     "Regimes (panel D)";
     orientation = :horizontal, framevisible = false, labelsize = 11, titlesize = 12,
@@ -591,7 +591,7 @@ band_row_both = _row_at(tau_slice_idx[2], _first_window_admitting(2))
 
 regime_summary = join(
     ["- `$(REGIMES[k])` (**$(REGIME_LABELS[k])**): $(regime_counts[k]) / $(n_cond) conditions " *
-     "($(round(100 * regime_counts[k] / n_cond; digits = 1))% of the plane)"
+     "($(round(100 * regime_counts[k] / n_cond; digits = 1))% of the sampled log-space grid)"
      for k in 1:length(REGIMES)], "\n")
 
 summary = """
@@ -678,6 +678,10 @@ differently. The versions this run used are recorded in `config.toml`.
   neuron id) and is `0` when no neuron has any mass.
 
 ## Regimes observed
+
+Both axes are sampled uniformly in logarithmic coordinates. Every percentage below is therefore
+a frequency among the **$(n_cond) sampled log-grid conditions**, not an area fraction of the
+linear τ × window parameter plane.
 
 Classification order (first match wins):
 
@@ -772,7 +776,7 @@ the stale spikes retain enough mass to compete.
    target is admitted by the window yet decays to nothing anyway. Calling that "selective"
    would be wrong — the model is not being selective, it has forgotten everything — so it
    is labeled `decay_starved` and reported separately. It occupies
-   $(round(100 * regime_counts[2] / n_cond; digits = 1))% of the plane.
+   $(round(100 * regime_counts[2] / n_cond; digits = 1))% of the sampled log-space grid.
 2. **A selective gate does not guarantee correct top-1.** In **$(selective_but_wrong)**
    conditions the gate is doing exactly what it should (target in, all stale out) and the
    target still loses top-1 to the weak but nearer competitor on neuron 2, because at short
@@ -839,7 +843,7 @@ summary_path = write_summary(SLUG, summary)
 # ---------------------------------------------------------------------------
 
 println("memory_gate — ", n_cond, " conditions over ", N_TAU, " τ × ", N_WINDOW, " window")
-println("  regime counts:")
+println("  regime counts (sampled log-grid frequencies):")
 for k in 1:length(REGIMES)
     @printf("    %-16s %4d  (%4.1f%%)\n", REGIMES[k], regime_counts[k],
             100 * regime_counts[k] / n_cond)

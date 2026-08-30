@@ -82,6 +82,10 @@ differently. The versions this run used are recorded in `config.toml`.
 
 ## Regimes observed
 
+Both axes are sampled uniformly in logarithmic coordinates. Every percentage below is therefore
+a frequency among the **625 sampled log-grid conditions**, not an area fraction of the
+linear τ × window parameter plane.
+
 Classification order (first match wins):
 
 1. `window_clipped` — the target lag is outside the window.
@@ -90,11 +94,11 @@ Classification order (first match wins):
 4. `soft_decay` — stale spikes are admitted but leakage `< 0.2`.
 5. `over_retentive` — stale spikes are admitted and leakage `>= 0.2`.
 
-- `window_clipped` (**hard-clipped**): 150 / 625 conditions (24.0% of the plane)
-- `decay_starved` (**decay-starved**): 95 / 625 conditions (15.2% of the plane)
-- `selective_gate` (**selective gate**): 220 / 625 conditions (35.2% of the plane)
-- `soft_decay` (**soft decay**): 82 / 625 conditions (13.1% of the plane)
-- `over_retentive` (**over-retentive**): 78 / 625 conditions (12.5% of the plane)
+- `window_clipped` (**hard-clipped**): 150 / 625 conditions (24.0% of the sampled log-space grid)
+- `decay_starved` (**decay-starved**): 95 / 625 conditions (15.2% of the sampled log-space grid)
+- `selective_gate` (**selective gate**): 220 / 625 conditions (35.2% of the sampled log-space grid)
+- `soft_decay` (**soft decay**): 82 / 625 conditions (13.1% of the sampled log-space grid)
+- `over_retentive` (**over-retentive**): 78 / 625 conditions (12.5% of the sampled log-space grid)
 
 Boundaries 1 and 3 are **exact structural facts** — they follow from `abs(dt) <= window`
 and nothing else. The `soft_decay` / `over_retentive` split is the one *soft* boundary:
@@ -179,7 +183,7 @@ the stale spikes retain enough mass to compete.
    target is admitted by the window yet decays to nothing anyway. Calling that "selective"
    would be wrong — the model is not being selective, it has forgotten everything — so it
    is labeled `decay_starved` and reported separately. It occupies
-   15.2% of the plane.
+   15.2% of the sampled log-space grid.
 2. **A selective gate does not guarantee correct top-1.** In **22**
    conditions the gate is doing exactly what it should (target in, all stale out) and the
    target still loses top-1 to the weak but nearer competitor on neuron 2, because at short
