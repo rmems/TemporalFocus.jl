@@ -687,11 +687,14 @@ using Random
             write(joinpath(dir, "metrics.csv"), "kernel,mass\ndiscrete,1.0\n")
             # A created-but-empty directory must not count as a published result.
             mkpath(joinpath(results, Gal.ENTRIES[3].slug))
+            # Nor may a directory with an image-looking suffix count as evidence.
+            mkpath(joinpath(results, Gal.ENTRIES[4].slug, "frames.png"))
 
             res, page, _ = _build(results)
 
             @test res.published == [slug]
             @test Gal.ENTRIES[3].slug in res.pending
+            @test Gal.ENTRIES[4].slug in res.pending
             @test occursin("No `config.toml` was recorded", page)
             @test occursin("No `figure.png` was emitted", page)
             @test occursin("No `summary.md` was emitted", page)
@@ -825,13 +828,15 @@ using Random
             dir = joinpath(results, slug)
             mkpath(dir)
             write(joinpath(dir, "metrics.csv"),
-                "kernel,note\ndiscrete,\"first line\nsecond line\"\ntemporal,plain\n")
+                "kernel,note\ndiscrete,\"first line\nsecond line\"\n" *
+                "temporal,plain,unexpected\n")
 
             _, page, _ = _build(results)
 
             # A quoted newline is one record, not two.
             @test occursin("2 recorded rows over 2 columns", page)
             @test occursin("first line second line", page)
+            @test occursin("**Malformed metrics schema:** 1 row does not match", page)
         end
 
         @testset "summary embedding is safe" begin
@@ -881,6 +886,13 @@ using Random
             @test !occursin("```@eval", mixed_lengths)
             @test occursin("```text", mixed_lengths)
 
+            container_exit = Gal._shift_headings(
+                "> ```text\n> literal\n\n```@eval\nerror(\"must not run\")\n```\n",
+                4,
+            )
+            @test !occursin("```@eval", container_exit)
+            @test count("```text", container_exit) == 2
+
             setext = Gal._shift_headings("Result\n======\n\nDetail\n------\n", 4)
             @test occursin("##### Result", setext)
             @test occursin("###### Detail", setext)
@@ -890,6 +902,9 @@ using Random
             indented_atx = Gal._shift_headings("  # Result\n   ## Detail\n", 4)
             @test occursin("  ##### Result", indented_atx)
             @test occursin("   ###### Detail", indented_atx)
+
+            indented_code = Gal._shift_headings("    output\n    ----\n", 4)
+            @test indented_code == "    output\n    ----\n"
         end
 
         @testset "summary links are rebased to evidence" begin
@@ -901,6 +916,7 @@ using Random
             write(joinpath(dir, "config.toml"), "seed = 1\n")
             write(joinpath(dir, "metrics.csv"), "a\n1\n")
             write(joinpath(dir, "figure.png"), "png")
+            write(joinpath(dir, "focus#detail.png"), "png")
             write(joinpath(dir, "summary.md"),
                 "[details](metrics.csv) ![plot](figure.png) " *
                 "[spaced](<figures/result plot.png>) " *
@@ -918,7 +934,8 @@ using Random
             @test occursin("[details]($(Gal.REPO_URL)/blob/main/", page)
             @test occursin("![plot](https://raw.githubusercontent.com/rmems/TemporalFocus.jl/main/", page)
             @test occursin("[spaced](<$(Gal.REPO_URL)/blob/main/", page)
-            @test occursin("figures/result plot.png>)", page)
+            @test occursin("figures/result%20plot.png>)", page)
+            @test occursin("focus%23detail.png", page)
             @test occursin("[web](https://example.com)", page)
             @test occursin("[local](#result)", page)
             @test occursin("[metrics]: $(Gal.REPO_URL)/blob/main/", page)
@@ -950,6 +967,12 @@ using Random
             @test Gal._split_csv_line("a,\"b,c\",d") == ["a", "b,c", "d"]
             @test Gal._split_csv_line("a,\"say \"\"hi\"\"\",c") == ["a", "say \"hi\"", "c"]
             @test Gal._cell("a|b\nc") == "a\\|b c"
+
+            csv = joinpath(mktempdir(), "metrics.csv")
+            write(csv, "a,b\n1,2,unexpected\n")
+            header, rows, total, malformed = Gal._csv_preview(csv)
+            @test (header, rows, total, malformed) ==
+                  (["a", "b"], [["1", "2", "unexpected"]], 1, 1)
         end
 
         @testset "internal helpers use private names" begin

@@ -237,9 +237,10 @@ function _collect_result(results_dir::AbstractString, slug::AbstractString;
     if isdir(dir)
         for name in sort(readdir(dir))
             name == "figure.png" && continue
-            if endswith(lowercase(name), ".png") ||
+            path = joinpath(dir, name)
+            if isfile(path) && (endswith(lowercase(name), ".png") ||
                endswith(lowercase(name), ".svg") ||
-               endswith(lowercase(name), ".gif")
+               endswith(lowercase(name), ".gif"))
                 push!(extras, name)
             end
         end
@@ -348,7 +349,7 @@ function _split_csv_line(line::AbstractString)
 end
 
 """
-    _csv_preview(path; maxrows=8) -> (header, rows, total_rows)
+    _csv_preview(path; maxrows=8) -> (header, rows, total_rows, malformed_rows)
 
 Read the header and at most `maxrows` data rows, and count the remaining data
 rows without holding them in memory.
@@ -357,14 +358,17 @@ function _csv_preview(path::AbstractString; maxrows::Int = 8)
     header = String[]
     rows = Vector{Vector{String}}()
     total = 0
+    malformed = 0
     function _take_record(record)
         isempty(strip(record)) && return
         if isempty(header)
             header = _split_csv_line(record)
             return
         end
+        fields = _split_csv_line(record)
         total += 1
-        length(rows) < maxrows && push!(rows, _split_csv_line(record))
+        length(fields) == length(header) || (malformed += 1)
+        length(rows) < maxrows && push!(rows, fields)
     end
     open(path, "r") do io
         pending = ""
@@ -378,7 +382,16 @@ function _csv_preview(path::AbstractString; maxrows::Int = 8)
         end
         _take_record(pending)  # unterminated quote: publish what is there
     end
-    return header, rows, total
+    return header, rows, total, malformed
+end
+
+"Block-quote depth in the leading CommonMark container prefix of one line."
+function _blockquote_depth(line::AbstractString)
+    prefix = match(
+        r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*)",
+        line,
+    ).captures[1]
+    return count(==('>'), prefix)
 end
 
 """
@@ -395,6 +408,7 @@ a fenced block.
 function _shift_headings(md::AbstractString, shift::Integer)
     out = IOBuffer()
     fence = nothing  # complete currently open fence delimiter, or nothing
+    fence_quote_depth = 0
     open_fence_pattern =
         r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]{0,3})(`{3,}|~{3,})(.*)$"
     close_fence_pattern =
@@ -403,6 +417,15 @@ function _shift_headings(md::AbstractString, shift::Integer)
     i = 1
     while i <= length(lines)
         line = lines[i]
+        # CommonMark closes a fenced block when its containing block quote ends,
+        # even without an explicit delimiter. Reprocess that first outside line
+        # so a generated top-level Documenter directive is neutralized.
+        if fence !== nothing && !isempty(strip(line)) &&
+           _blockquote_depth(line) < fence_quote_depth
+            fence = nothing
+            fence_quote_depth = 0
+            continue
+        end
         # CommonMark containers can nest in either order and to arbitrary depth.
         # Repeating the container atom recognizes, for example, `- > ```@example`
         # and `> 1. > ```@docs` without treating generated directives as executable.
@@ -411,6 +434,7 @@ function _shift_headings(md::AbstractString, shift::Integer)
             prefix, marker, info = m.captures[1], m.captures[2], m.captures[3]
             if fence === nothing
                 fence = marker
+                fence_quote_depth = _blockquote_depth(prefix)
                 tag = strip(info)
                 first_tag = isempty(tag) ? "" : lowercase(first(split(tag)))
                 (startswith(tag, "@") || first_tag == "jldoctest") && (info = "text")
@@ -419,7 +443,7 @@ function _shift_headings(md::AbstractString, shift::Integer)
                 # A closing fence must use the same character, contain no info
                 # string, and be at least as long as its opening delimiter.
                 marker[1] == fence[1] && length(marker) >= length(fence) &&
-                    isempty(strip(info)) && (fence = nothing)
+                    isempty(strip(info)) && (fence = nothing; fence_quote_depth = 0)
                 println(out, line)
             end
             i += 1
@@ -437,8 +461,8 @@ function _shift_headings(md::AbstractString, shift::Integer)
 
             # Setext headings are two-line constructs. Convert them to ATX form
             # before embedding so they nest under the gallery just like `#` headings.
-            if i < length(lines) && !isempty(strip(line))
-                underline = match(r"^[ \t]*(=+|-+)[ \t]*$", lines[i+1])
+            if i < length(lines) && match(r"^ {0,3}\S", line) !== nothing
+                underline = match(r"^ {0,3}(=+|-+)[ \t]*$", lines[i+1])
                 if underline !== nothing
                     base_level = startswith(underline.captures[1], "=") ? 1 : 2
                     level = min(6, base_level + shift)
@@ -469,12 +493,27 @@ commit, so a versioned gallery page keeps pointing at the evidence it was render
 from even after `main` moves on.
 """
 _blob_url(root, path, ref::AbstractString = "main") =
-    string(REPO_URL, "/blob/", ref, "/", _rel_path(root, path))
+    string(REPO_URL, "/blob/", ref, "/", _url_path(_rel_path(root, path)))
 
 "Raw-content URL for generated images embedded by a summary."
 _raw_url(root, path, ref::AbstractString = "main") =
     string("https://raw.githubusercontent.com/rmems/TemporalFocus.jl/", ref, "/",
-           _rel_path(root, path))
+           _url_path(_rel_path(root, path)))
+
+"Percent-encode a repository-relative path component-wise for an HTTP URL."
+function _url_path(path::AbstractString)
+    io = IOBuffer()
+    for byte in codeunits(replace(String(path), '\\' => '/'))
+        unreserved = (UInt8('A') <= byte <= UInt8('Z')) ||
+                     (UInt8('a') <= byte <= UInt8('z')) ||
+                     (UInt8('0') <= byte <= UInt8('9')) ||
+                     byte == UInt8('-') || byte == UInt8('.') || byte == UInt8('_') ||
+                     byte == UInt8('~') || byte == UInt8('/')
+        unreserved ? write(io, byte) :
+        print(io, '%', uppercase(string(byte; base = 16, pad = 2)))
+    end
+    return String(take!(io))
+end
 
 "True when a Markdown destination already has an absolute or document-local base."
 function _is_absolute_destination(dest::AbstractString)
@@ -511,6 +550,7 @@ _reference_label(label::AbstractString) =
 function _summary_code_mask(lines::Vector{<:AbstractString})
     mask = falses(length(lines))
     fence = nothing
+    fence_quote_depth = 0
     open_fence_pattern =
         r"^((?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ \t]{0,3})(`{3,}|~{3,})(.*)$"
     close_fence_pattern =
@@ -518,11 +558,17 @@ function _summary_code_mask(lines::Vector{<:AbstractString})
     indented_pattern =
         r"^(?:(?:[ \t]*>[ \t]*)|(?:[ \t]*(?:[-*+]|\d+[.)])[ \t]+))*[ ]{4}"
     for (i, line) in pairs(lines)
+        if fence !== nothing && !isempty(strip(line)) &&
+           _blockquote_depth(line) < fence_quote_depth
+            fence = nothing
+            fence_quote_depth = 0
+        end
         m = match(fence === nothing ? open_fence_pattern : close_fence_pattern, line)
         if fence === nothing
             if m !== nothing
                 mask[i] = true
                 fence = m.captures[2]
+                fence_quote_depth = _blockquote_depth(m.captures[1])
             elseif match(indented_pattern, line) !== nothing
                 mask[i] = true
             end
@@ -531,7 +577,7 @@ function _summary_code_mask(lines::Vector{<:AbstractString})
             if m !== nothing
                 marker, info = m.captures[2], m.captures[3]
                 marker[1] == fence[1] && length(marker) >= length(fence) &&
-                    isempty(strip(info)) && (fence = nothing)
+                    isempty(strip(info)) && (fence = nothing; fence_quote_depth = 0)
             end
         end
     end
@@ -770,7 +816,7 @@ function _render_metrics(io::IO, result::ResultSet, root::AbstractString)
         println(io)
         return
     end
-    header, rows, total = _csv_preview(result.metrics_path)
+    header, rows, total, malformed = _csv_preview(result.metrics_path)
     link = string("[`", _rel_path(root, result.metrics_path), "`](",
         _blob_url(root, result.metrics_path, result.ref), ")")
     if isempty(header)
@@ -781,6 +827,13 @@ function _render_metrics(io::IO, result::ResultSet, root::AbstractString)
     println(io, total, " recorded row", total == 1 ? "" : "s", " over ", length(header),
         " column", length(header) == 1 ? "" : "s", " in ", link, ".")
     println(io)
+    if malformed > 0
+        println(io, "**Malformed metrics schema:** ", malformed, " row",
+            malformed == 1 ? " does" : "s do", " not match the header's ",
+            length(header), " columns. Inspect the linked CSV; missing preview cells are ",
+            "padded and excess cells are not displayed below.")
+        println(io)
+    end
     println(io, "| ", join([_cell(h) for h in header], " | "), " |")
     println(io, "|", repeat("---|", length(header)))
     for row in rows
