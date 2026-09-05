@@ -26,3 +26,7 @@
 *.log
 *.tmp
 *.swp
+
+# Agent / tool scratch
+.claude/
+.codex
