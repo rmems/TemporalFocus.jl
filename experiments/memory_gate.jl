@@ -14,18 +14,28 @@
 # Run:
 #   julia --project=experiments experiments/memory_gate.jl
 #
-# Artifacts land in experiments/results/memory_gate/.
+# Artifacts land in `experiments/results/memory_gate/` via the shared
+# #61 harness (`using ExperimentUtils`). Results are git-ignored and regenerated
+# by the command above.
 
+using CairoMakie
+using ExperimentUtils
 using Printf
 using Random
 using Statistics
+using TemporalFocus
 using TOML
 
-using CairoMakie
-using TemporalFocus
-
-include(joinpath(@__DIR__, "src", "ExperimentUtils.jl"))
-using .ExperimentUtils
+# Fail loudly rather than publish results measured against some other copy of
+# the package. The experiments environment is pointed at this checkout with
+# `Pkg.develop(path=".")`; this assertion is the measurement-correctness belt.
+let loaded = realpath(pkgdir(TemporalFocus))
+    expected = realpath(repo_root())
+    loaded == expected || error(
+        "TemporalFocus was loaded from $(loaded), not the checkout at $(expected); " *
+        "refusing to run so results cannot describe a different implementation",
+    )
+end
 
 const SLUG = "memory_gate"
 
