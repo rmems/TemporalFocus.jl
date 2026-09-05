@@ -24,7 +24,7 @@ identical inputs on the same Julia version reproduce byte-identical
 ## Landed experiments
 
 | Experiment | Script | Question |
-|---|---|---|
+| :--- | :--- | :--- |
 | Temporal Lens | [`temporal_lens.jl`](https://github.com/rmems/TemporalFocus.jl/blob/main/experiments/temporal_lens.jl) | How does the recency field change with spike separation `Δt` and time constant `τ`? |
 | Three Regimes | [`three_regimes.jl`](https://github.com/rmems/TemporalFocus.jl/blob/main/experiments/three_regimes.jl) | Given the same spikes, what do discrete, temporal, and continuous attention preserve, decay, and reject? |
 | Focus Under Fire | [`focus_under_fire.jl`](https://github.com/rmems/TemporalFocus.jl/blob/main/experiments/focus_under_fire.jl) | How robust is temporal attention as stale same-neuron distractors and random noise grow? |
