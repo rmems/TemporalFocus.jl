@@ -3,55 +3,40 @@
 # Attention Spotlight — replay a recorded spike stream through `TemporalBuffer`s
 # and watch continuous attention move between neurons.
 #
-# Run:
-#   julia --project=experiments experiments/attention_spotlight.jl
+# Run from the repository root:
+#
+#     julia --project=experiments -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+#     julia --project=experiments experiments/attention_spotlight.jl
 #
 # Optional animation (deterministic, opt-in, artifact intentionally not committed):
-#   SPOTLIGHT_ANIMATE=1 julia --project=experiments experiments/attention_spotlight.jl
+#
+#     SPOTLIGHT_ANIMATE=1 julia --project=experiments experiments/attention_spotlight.jl
+#
+# Artifacts land in `experiments/results/attention_spotlight/` via the shared
+# #61 harness (`using ExperimentUtils`). Results are git-ignored and regenerated
+# by the command above.
 #
 # The replay is a pure experiment-side loop over the existing package primitives
 # (`TemporalBuffer`, `prune!`, `spike_attention_continuous`, `normalize_l1!`).
 # No scheduler, event loop, or runtime API is added to TemporalFocus itself.
 
-import Pkg
-
-const EXPERIMENTS_DIR = @__DIR__
-const REPO_ROOT = normpath(joinpath(EXPERIMENTS_DIR, ".."))
-const SLUG = "attention_spotlight"
-
-"""
-    ensure_environment()
-
-Make sure the `experiments/` environment is active and instantiated so that a
-bare `julia --project=experiments experiments/attention_spotlight.jl` works from
-a fresh checkout (TemporalFocus is `dev`ed from the repo root, never added as a
-root dependency).
-"""
-function ensure_environment()
-    project = joinpath(EXPERIMENTS_DIR, "Project.toml")
-    Base.active_project() == project || Pkg.activate(EXPERIMENTS_DIR)
-    temporal_focus_source = Base.find_package("TemporalFocus")
-    expected_source = joinpath(REPO_ROOT, "src", "TemporalFocus.jl")
-    needs_setup = !isfile(joinpath(EXPERIMENTS_DIR, "Manifest.toml")) ||
-                  temporal_focus_source === nothing ||
-                  realpath(temporal_focus_source) != realpath(expected_source) ||
-                  Base.find_package("CairoMakie") === nothing
-    if needs_setup
-        @info "Instantiating the experiments environment (first run may take a few minutes)"
-        Pkg.develop(path = REPO_ROOT)
-        Pkg.instantiate()
-    end
-    return nothing
-end
-
-ensure_environment()
-
-using Printf
 using CairoMakie
+using ExperimentUtils
+using Printf
 using TemporalFocus
 
-include(joinpath(EXPERIMENTS_DIR, "src", "ExperimentUtils.jl"))
-using .ExperimentUtils
+# Fail loudly rather than publish results measured against some other copy of
+# the package. The experiments environment is pointed at this checkout with
+# `Pkg.develop(path=".")`; this assertion is the measurement-correctness belt.
+let loaded = realpath(pkgdir(TemporalFocus))
+    expected = realpath(repo_root())
+    loaded == expected || error(
+        "TemporalFocus was loaded from $(loaded), not the checkout at $(expected); " *
+        "refusing to run so results cannot describe a different implementation",
+    )
+end
+
+const SLUG = "attention_spotlight"
 
 # ---------------------------------------------------------------------------
 # Configuration — the whole scenario is a pure function of these numbers.
@@ -633,16 +618,6 @@ function summary_markdown(cfg, events, steps, segments, moves, artifacts)
     return String(take!(io))
 end
 
-"""
-    config_float(x) -> Float64
-
-`Float32` parameter widened for TOML output. Going through the shortest
-round-tripping `Float32` string keeps the recorded value both readable (`0.35`,
-not `0.3499999940395355`) and exact: `Float32` of what lands in `config.toml`
-is the parameter the run used.
-"""
-config_float(x::Real) = parse(Float64, string(Float32(x)))
-
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -654,23 +629,26 @@ function main(cfg = CONFIG)
     moves = handoffs(segments)
 
     dir = result_dir(cfg.slug)
+    # Landed `write_config` formats Float32 through its shortest decimal form
+    # and appends a `[provenance]` table (git commit, dirty flag, Julia version,
+    # UTC timestamp).
     config_path = write_config(cfg.slug, Dict{String,Any}(
         "n_neurons" => cfg.n_neurons,
-        "buffer_window" => config_float(cfg.buffer_window),
-        "tau" => config_float(cfg.tau),
-        "sample_dt" => config_float(cfg.sample_dt),
-        "t_end" => config_float(cfg.t_end),
-        "phase_length" => config_float(cfg.phase_length),
+        "buffer_window" => cfg.buffer_window,
+        "tau" => cfg.tau,
+        "sample_dt" => cfg.sample_dt,
+        "t_end" => cfg.t_end,
+        "phase_length" => cfg.phase_length,
         "phase_neurons" => collect(cfg.phase_neurons),
         "bursts_per_phase" => cfg.bursts_per_phase,
-        "burst_start" => config_float(cfg.burst_start),
-        "burst_spacing" => config_float(cfg.burst_spacing),
-        "pattern_lag" => config_float(cfg.pattern_lag),
-        "pattern_value" => config_float(cfg.pattern_value),
-        "background_period" => config_float(cfg.background_period),
-        "background_lag" => config_float(cfg.background_lag),
-        "background_value" => config_float(cfg.background_value),
-        "jitter" => config_float(cfg.jitter),
+        "burst_start" => cfg.burst_start,
+        "burst_spacing" => cfg.burst_spacing,
+        "pattern_lag" => cfg.pattern_lag,
+        "pattern_value" => cfg.pattern_value,
+        "background_period" => cfg.background_period,
+        "background_lag" => cfg.background_lag,
+        "background_value" => cfg.background_value,
+        "jitter" => cfg.jitter,
         "min_hold_steps" => cfg.min_hold_steps,
         "n_events" => length(events),
         "n_steps" => length(steps),
