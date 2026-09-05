@@ -73,14 +73,10 @@ Outputs from this package should remain pure SNN quantities or direct neuron-spa
 
 ## Experiment Gallery
 
-TemporalFocus is characterized with reproducible spike-native experiments covering
-recency, kernel behavior, distractor rejection, timing jitter, streaming focus, and
-τ/window trade-offs.
-
-Every entry is rendered from generated artifacts — `config.toml`, `metrics.csv`,
-`figure.png`, and `summary.md` under `experiments/results/<slug>/` — so each claim
-links back to the run that produced it, and experiments that have not run yet are
-shown as pending rather than filled with placeholders.
+Spike-native characterization experiments (recency, kernel regimes, distractors,
+jitter, streaming focus, τ/window) live under [`experiments/`](experiments/).
+The hosted index points at those scripts and the local `experiments/results/`
+artifact layout.
 
 **→ [Experiment Gallery](https://rmems.github.io/TemporalFocus.jl/dev/experiments/)**
 
