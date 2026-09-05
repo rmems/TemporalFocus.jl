@@ -71,6 +71,15 @@ Outputs from this package should remain pure SNN quantities or direct neuron-spa
 - `normalize_max!`
 - `prune!`
 
+## Experiment Gallery
+
+Spike-native characterization experiments (recency, kernel regimes, distractors,
+jitter, streaming focus, τ/window) live under [`experiments/`](experiments/).
+The hosted index points at those scripts and the local `experiments/results/`
+artifact layout.
+
+**→ [Experiment Gallery](https://rmems.github.io/TemporalFocus.jl/dev/experiments/)**
+
 ## Examples
 
 Runnable scripts live under [`examples/`](examples/). From the repo root:
