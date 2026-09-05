@@ -1,15 +1,21 @@
 # ADR 0001 — Consolidate NeuroPulse.jl and SpikeStream.jl into TemporalFocus.jl
 
-- **Status:** Accepted (plan), not yet implemented
+> **SUPERSEDED.** Owner override: TemporalFocus consolidates **into** NeuroPulse,
+> not the other way around. Do not implement this document's import sequence
+> (NP+SpikeStream → TemporalFocus). See
+> [ADR 0002](0002-merge-temporalfocus-into-neuropulse.md).
+> Inventory, adapter, and precision notes below remain historical salvage.
+
+- **Status:** Superseded by [ADR 0002](0002-merge-temporalfocus-into-neuropulse.md)
 - **Date:** 2026-08-23
 - **Tracking issue:** [rmems/TemporalFocus.jl#53](https://github.com/rmems/TemporalFocus.jl/issues/53)
 - **Umbrella issue:** [rmems/.github#3](https://github.com/rmems/.github/issues/3)
 - **Supersedes:** the README/AGENTS.md exclusion of "routing mechanisms" (see [Decision](#decision))
+- **Superseded by:** [ADR 0002](0002-merge-temporalfocus-into-neuropulse.md) (2026-09-05)
 
 This ADR is the pre-migration inventory, symbol disposition record, and migration
-sequence required by issue #53. **No source code moves in the change that introduces
-this document.** Everything below describes work that is still to be done, in the
-order it should be done, so each subsequent step is a small reviewable PR.
+sequence required by issue #53 **as originally written**. It landed via PR #54.
+**Do not execute the sequence below.** ADR 0002 is the authoritative plan.
 
 ---
 

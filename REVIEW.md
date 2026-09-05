@@ -42,11 +42,11 @@ If a PR introduces features outside this scope, request scope clarification befo
   finance/HFT semantics?
 - If so, does it belong in a dedicated package or a downstream domain application such
   as `rmems/Limen-Capital` or `rmems/DendriteTrader.jl` instead?
-- A one-time boundary broadening is recorded in
-  [ADR 0001](docs/adr/0001-consolidate-neuropulse-and-spikestream.md)
-  (spike-stream feature extraction and an activity-routing kernel). **That change is
-  not yet in effect** — enforce the scope list above until the migration lands and
-  updates it.
+- Consolidation is recorded in
+  [ADR 0002](docs/adr/0002-merge-temporalfocus-into-neuropulse.md)
+  (TemporalFocus → NeuroPulse). That supersedes ADR 0001 / PR #54. **Reject PRs
+  that import NeuroPulse or SpikeStream into this repository.** Enforce the scope
+  list above until the NeuroPulse import lands.
 
 ### Type stability
 
