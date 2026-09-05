@@ -228,14 +228,16 @@ release is additive for existing TemporalFocus consumers.
 | `save_state` | **Migrate** | Pure in-memory `NamedTuple` snapshot; no filesystem, no serialization format. Not runtime orchestration. |
 | `load_state!` | **Migrate** | |
 | `load_state` | **Migrate, deprecated** | Currently `const load_state = load_state!` — a non-bang name bound to a mutating function. Keep as a `Base.@deprecate_binding` alias; steer callers to `load_state!`. |
-| `adapt_leak!` | **Conditional:** rehome/remove once decided; otherwise **migrate temporarily, deprecated** | The step-5 compatibility fallback is authoritative: carry the function until the owner names a working successor or explicitly retires it without one. Its final destination remains [out of scope](#what-does-not-migrate). |
+| `adapt_leak!` | **Conditional:** rehome/remove once decided; otherwise **migrate temporarily, deprecated** | The step-5 compatibility fallback is authoritative: carry the function until the owner names a working successor or explicitly retires it without one. While carried, it stays callable under its own name and warns via inline `Base.depwarn` or `Base.@deprecate` — see [Deprecation mechanics](#deprecation-mechanics). Its final destination remains [out of scope](#what-does-not-migrate). |
 | `default_inhibition_matrix` | **Migrate** | Including the `n ≤ 4` historical-slice rule and the `0.08/\|i-j\|` decay rule for `n > 4`. |
 | `LobeState`, `NeroOrchestrator` | **Migrate, deprecated aliases** | Used downstream. |
 | `update_relevance!`, `nero_diagnostics` | **Migrate, deprecated aliases** | No package-level consumer found, but `rmems/Limen-Capital`'s **vendored fork** (`brain/synapse_conductor.jl`) uses these exact names. Keeping them is what makes de-vendoring onto this package a rename-free change. |
 | `ALPHA`, `BETA`, `GAMMA`, `EMA_DECAY`, `MIN_SCORE`, `EPSILON` | **Migrate, renamed** | Unexported but far too generic for a package that also owns attention. Rename them to `ROUTING_ALPHA`, `ROUTING_BETA`, `ROUTING_GAMMA`, `ROUTING_EMA_DECAY`, `ROUTING_MIN_SCORE`, and `ROUTING_EPSILON`; the deprecated `NERO_*` constants bind to these values. |
 | `NERO_ALPHA`, `NERO_BETA`, `NERO_GAMMA`, `NERO_EMA_DECAY`, `NERO_MIN_SCORE`, `NERO_EPSILON` | **Migrate, deprecated aliases** | |
-| `DEFAULT_REGION_NAMES`, `NERO_DEFAULT_LOBE_NAMES` | **Migrate** | Latter deprecated. |
-| `INHIBIT`, `NERO_INHIBIT` | **Migrate** | The hardcoded asymmetric 4×4 matrix is arbitrary legacy tuning; keep it as the documented default and say so. |
+| `DEFAULT_REGION_NAMES` | **Migrate** | Canonical region-name tuple. |
+| `NERO_DEFAULT_LOBE_NAMES` | **Migrate, deprecated** | `Base.@deprecate_binding` to `DEFAULT_REGION_NAMES`. |
+| `INHIBIT` | **Migrate** | The hardcoded asymmetric 4×4 matrix is arbitrary legacy tuning; keep it as the documented default and say so. |
+| `NERO_INHIBIT` | **Migrate, deprecated** | `Base.@deprecate_binding` to `INHIBIT`. |
 | `Base.setproperty!(::RegionRouter, …)` | **Migrate** | Guards `config` replacement against `min_score` infeasibility. Easy to lose in a port; it is load-bearing. |
 
 #### Deprecation mechanics
@@ -244,7 +246,25 @@ On the supported Julia 1.9+ range, `Base.@deprecate_binding` deprecates a type, 
 or function alias **without changing the binding's kind**. It is incorrect to claim that
 warnings require turning types or constants into wrapper functions, and it is incorrect
 to leave those aliases silent. Step 6 uses binding deprecation for every deprecated
-alias; wrapper functions and documentation-only silent aliases are not used.
+*alias*; documentation-only silent aliases are not used.
+
+**Same-name function deprecation is a different case.** `adapt_leak!` is not an alias —
+when step 5 carries it, the public name stays `adapt_leak!` and the method remains
+callable with its current signature. Binding deprecation cannot emit a warning for a
+function under its own name. The carried method therefore warns via one of:
+
+- **Preferred:** an inline `Base.depwarn("adapt_leak! is deprecated; …", :adapt_leak!)`
+  at the start of the existing method body. The binding stays a function of the same
+  name; no extra public name is introduced.
+- **Allowed:** `Base.@deprecate adapt_leak!(args...) _adapt_leak!(args...)` if the
+  implementation is moved to an `_`-prefixed internal. That form exists only to emit
+  the warning for a same-name carry; it is not forbidden. The alias rule above — do
+  not rewrite *type or constant aliases* as wrapper functions — does not apply here.
+
+Step 6 tests the carried `adapt_leak!` the same way it tests aliases: a call emits a
+deprecation warning (`Test.@test_deprecated` or equivalent) and the method remains
+callable with the current behavior. If step 5 removed the function because a destination
+or retirement was decided, this test is omitted.
 
 ```julia
 Base.@deprecate_binding LobeState ActivityRegion
@@ -274,7 +294,8 @@ Step 6 tests both halves of that contract: each listed old name emits a deprecat
 warning on use (`Test.@test_deprecated` or equivalent), and the binding kind is
 preserved (`LobeState === ActivityRegion` and usable in `::`/`isa`; `NERO_ALPHA ===
 ROUTING_ALPHA` and usable in arithmetic; each function alias `isa Function` and
-forwards to the canonical method).
+forwards to the canonical method). When `adapt_leak!` is carried, the same step also
+asserts that a call under that name warns and still runs.
 
 ### `rmems/SpikeStream.jl`
 
@@ -401,7 +422,17 @@ migration.
 | `burst_intervals_by_neuron(buffer::TemporalBuffer, current_time::Real; max_isi::Real=0.02, min_spikes::Int=3, ignore_values::Bool=false) -> Dict{Int,Vector{Tuple{Float64,Float64}}}` | Buffer overload of the interval adapter, after applying the buffer window. |
 | `normalized_feature_vector_f32(train::SpikeTrain, neuron_id::Integer; t_start=nothing, t_end=nothing, max_density::Real=1000.0, ignore_values::Bool=false) -> Vector{Float32}` | Single-neuron Float32 convenience path. Same projection and `ignore_values` contract as `spike_times`; then the step-3 timestamp wrapper. No whole-train or grouped overload. Result is exactly four `Float32` values, not the `normalized::Vector{Float64}` field of `spike_features_by_neuron`. |
 | `normalized_feature_vector_f32(buffer::TemporalBuffer, neuron_id::Integer, current_time::Real; t_start=nothing, t_end=nothing, max_density::Real=1000.0, ignore_values::Bool=false) -> Vector{Float32}` | Buffer overload of the same name. `neuron_id` then positional required `current_time`; same window/`current_time` contract as the other buffer adapters. |
-| `SpikeTrain(times::AbstractVector{<:Real}; neuron_id, value=1.0f0, check_precision::Symbol=:collisions)` | Reverse direction. `neuron_id` is a required keyword and the precision modes are fixed below. |
+| `SpikeTrain(times::AbstractVector{<:Real}; neuron_id, value=1.0f0, check_precision::Symbol=:collisions)` | Reverse direction. For **non-empty** `times`, `neuron_id` is a required keyword and the precision modes are fixed below. **Empty** `times` (`Float64[]`, `Int[]`, and other empty `AbstractVector{<:Real}`) does **not** require `neuron_id`: it constructs an empty train, the same as `SpikeTrain()` / `SpikeTrain(SpikeEvent[])`. |
+
+**Empty reverse-constructor input must not require `neuron_id`.** The planned
+`SpikeTrain(times::AbstractVector{<:Real}; neuron_id, …)` overload would otherwise
+capture `SpikeTrain(Float64[])` and `SpikeTrain(Int[])` and throw `UndefKeywordError`.
+Those calls must keep constructing an empty `SpikeTrain` without keywords. The
+empty-`times` path is keyword-optional and falls through to the inner
+`SpikeTrain(SpikeEvent[])` constructor; `neuron_id` remains required only when
+`times` is non-empty. Supplying `neuron_id` on empty input is allowed and still
+yields an empty train. Step 4 pins both `SpikeTrain(Float64[])` and `SpikeTrain(Int[])`
+as constructor-level empty-train regressions, not only adapter-level empty-input tests.
 
 Every projection and feature adapter validates that its candidate events have finite
 timestamps **before any window/feature filtering that could discard them** and before
@@ -505,8 +536,8 @@ stored in a `SpikeEvent`. Downstream that is not a rounding nuisance, it changes
 
 | Mode | Rejects | Use when |
 |---|---|---|
-| `:collisions` *(default)* | narrowing that **merges timestamps that were distinct**, or that exceeds `abs(t) > 2^24` | normal ingest |
-| `:strict` | **any** timestamp that does not round-trip `Float64 → Float32 → Float64` | exact parity with a `Float64` pipeline is required |
+| `:collisions` *(default)* | non-finite `t` (including a finite value that narrows to non-finite `Float32`); narrowing that **merges timestamps that were distinct**; or `abs(t) > 2^24` | normal ingest |
+| `:strict` | non-finite `t` (including overflow to non-finite `Float32`); **or any** timestamp that does not round-trip `Float64 → Float32 → Float64` | exact parity with a `Float64` pipeline is required |
 | `:none` | non-finite inputs **or a finite input that narrows to non-finite `Float32`** | the caller has accepted lossy but still finite ingest |
 
 **Unknown `check_precision` symbols throw `ArgumentError`.** The only valid values are
@@ -540,7 +571,7 @@ wrapper:
 
 ```julia
 normalized_feature_vector_f32(
-    spike_times::AbstractVector{<:Real};
+    times::AbstractVector{<:Real};
     t_start=nothing,
     t_end=nothing,
     max_density::Real=1000.0,
@@ -593,6 +624,9 @@ case. The step cannot pass without this Float32 container API.
 Non-negotiable before the SpikeStream source is retired:
 
 - empty input; single spike; two spikes
+- constructor-level empty Real vectors: `SpikeTrain(Float64[])` and `SpikeTrain(Int[])`
+  construct an empty train without `neuron_id` (no `UndefKeywordError`); non-empty
+  `times` still requires `neuron_id`
 - unsorted input; duplicated timestamps; negative timestamps
 - `NaN` / `Inf` timestamps
 - a finite timestamp that overflows to `Inf32` during narrowing (including under `:none`)
@@ -668,9 +702,9 @@ text moves.
 | 1 | **This ADR** — inventory, dispositions, boundary decision | Owner accepts the boundary broadening and the UUID recommendation |
 | 2 | **Immediately before editing identity, rerun and record the repository-wide consumer audit** for package name, old UUID, Git URL, and fixed `rev` pins; then regenerate the canonical UUID per `RELEASING.md` (`Project.toml`, `docs/Project.toml`, `benchmark/Project.toml`, and `Manifest.toml` via `Pkg.resolve()`); atomically update `RELEASING.md`'s UUID-hygiene section so it records the new UUID and no longer instructs a second regeneration | The fresh audit, not only the 2026-08-23 snapshot, finds no unplanned consumer dependent on `7f3c9f2a-…`; any new consumer is migrated or explicitly blocks the edit; identity changes **before** any import so `v0.2.0` ships the final UUID and no consumer migrates twice |
 | 3 | Port SpikeStream feature kernels + `test/fixtures/spike_vectors.json`, `Statistics` inlined; **add spike-stream feature extraction to the Scope lists and naming policy, amend `AGENTS.md`'s Float32 rule to the scoped wording in [Precision policy](#precision-policy), and scope `REVIEW.md`'s return-type rule to permit derived `Float64` features in the same PR** | Frozen fixtures pass unmodified; `[deps]` still empty; boundary, naming, scoped Float32 rule, and reviewer type guidance match what `main` now ships |
-| 4 | Add the exact `SpikeTrain`/`TemporalBuffer` adapter surface in [Adapters between the two data models](#adapters-between-the-two-data-models) + the full edge-case suite from [Precision policy](#precision-policy), including pre-built events with non-finite timestamps, non-finite buffer windows/reference times, Float32 reference-time boundary parity, uniform non-unit values, the `normalized_feature_vector_f32` container overloads, and the unknown-`check_precision` rejection; **extend `AGENTS.md`'s naming policy in this same PR with the exact adapter family** `spike_times`, `spike_times_by_neuron`, `spike_features_by_neuron`, `burst_intervals_by_neuron`, and the container overloads of `normalized_feature_vector_f32` | Signatures, keyword forwarding, result schemas, interval returns, and the two `normalized_feature_vector_f32` container overloads (`Vector{Float32}`, project-then-wrapper parity) match the contract; narrowing-collision, unknown-symbol `ArgumentError`, pre-filter non-finite projection/window/reference checks and the `prune!` boundary-parity test fail loudly without their guards and pass with them; every non-unit value requires `ignore_values=true`; naming guidance matches the exported adapter surface |
+| 4 | Add the exact `SpikeTrain`/`TemporalBuffer` adapter surface in [Adapters between the two data models](#adapters-between-the-two-data-models) + the full edge-case suite from [Precision policy](#precision-policy), including pre-built events with non-finite timestamps, non-finite buffer windows/reference times, Float32 reference-time boundary parity, uniform non-unit values, constructor-level empty `Float64[]`/`Int[]` ingest without `neuron_id`, the `normalized_feature_vector_f32` container overloads, and the unknown-`check_precision` rejection; **extend `AGENTS.md`'s naming policy in this same PR with the exact adapter family** `spike_times`, `spike_times_by_neuron`, `spike_features_by_neuron`, `burst_intervals_by_neuron`, and the container overloads of `normalized_feature_vector_f32` | Signatures, keyword forwarding, result schemas, interval returns, and the two `normalized_feature_vector_f32` container overloads (`Vector{Float32}`, project-then-wrapper parity) match the contract; narrowing-collision, unknown-symbol `ArgumentError`, empty `SpikeTrain(Float64[])`/`SpikeTrain(Int[])` construction, pre-filter non-finite projection/window/reference checks and the `prune!` boundary-parity test fail loudly without their guards and pass with them; every non-unit value requires `ignore_values=true`; naming guidance matches the exported adapter surface |
 | 5 | Port `ActivityRegion` + routing kernel, `LinearAlgebra` dropped, generic constants renamed to the decided `ROUTING_*` family; exclude `adapt_leak!` only when its destination or explicit retirement is decided, otherwise carry it temporarily as deprecated; rename `spike_density` only if accepted, otherwise retain the existing field name; drop `Printf` only if changed diagnostics formatting is accepted, otherwise preserve it; **add the routing kernel to the Scope lists and extend the naming policy with the exact routing surface** `update_routing!`, `routing_diagnostics`, `save_state`, `load_state!`, and `default_inhibition_matrix` in the same PR (plus an explicit compatibility-only exception for `adapt_leak!` if it is carried), with the admissible-mutation limits | NeuroPulse's suite ports and passes; `adapt_leak!` tests are omitted only if its removal is decided, otherwise they remain; boundary and naming text match what `main` now ships; diagnostics formatting is decided and tested before `Printf` is removed; unresolved `adapt_leak!` and field-name decisions use the documented compatibility fallbacks below |
-| 6 | Port deprecated aliases with `Base.@deprecate_binding`, **preserving each binding's kind** — see [Deprecation mechanics](#deprecation-mechanics) | Every listed old name warns on use; `LobeState` remains a type usable in `::`/`isa` and `=== ActivityRegion`; `NERO_ALPHA` remains arithmetic and `=== ROUTING_ALPHA`; function aliases remain functions and forward to the canonical methods with no extra wrapper frame |
+| 6 | Port deprecated aliases with `Base.@deprecate_binding`, **preserving each binding's kind**, and install the same-name `adapt_leak!` warning if step 5 carried the function — see [Deprecation mechanics](#deprecation-mechanics) | Every listed old alias warns on use; `LobeState` remains a type usable in `::`/`isa` and `=== ActivityRegion`; `NERO_ALPHA` remains arithmetic and `=== ROUTING_ALPHA`; function aliases remain functions and forward to the canonical methods with no extra wrapper frame; if `adapt_leak!` was carried, a call warns (`Test.@test_deprecated` or equivalent) and remains callable |
 | 7 | Consolidated docs pass: update the README one-sentence lead **and its Interface Contract and Current API lists** for bare timestamp features, `SpikeTrain`/`TemporalBuffer` adapters, `ActivityRegion` routing inputs, statistical outputs, and every migrated export; perform the full `REVIEW.md` checklist pass (preserving the derived-feature type exception landed in step 3), verify the scoped `Float32` rule, update `docs/src/`, and add scope tests asserting the exported symbol set | README and site describe every shipped input/output shape and public export; stated boundary matches shipped code exactly |
 | 8 | Port examples and benchmarks; write `docs/src/migration.md` with the [upgrade matrix](#upgrade-matrix); complete every non-source [artifact disposition ledger](#non-source-artifact-disposition-ledger) row assigned through step 8 and record the step-9/10 rows as pending with their owner/destination; bump to `0.2.0`, update `CHANGELOG.md`, **and update `RELEASING.md`'s first-registration procedure** from v0.1.0 to v0.2.0 (the UUID-hygiene section was already corrected atomically in step 2) | Fresh-clone `Pkg.instantiate()` + `Pkg.test()` green on the full CI matrix; every ledger row assigned through step 8 is complete and later rows have an explicit pending owner/destination |
 | 9 | Add redirect READMEs to `NeuroPulse.jl` and `SpikeStream.jl`; update `rmems/kinetic-signals` boundary docs to name `TemporalFocus.jl (spike features)`; land `rmems/Limen-Capital#9`, including its `brain/Project.toml`, README, and `docs/deps.md` updates **and replacement of the vendored router in `brain/synapse_conductor.jl`/`brain/sonar_probe.jl` with the consolidated package API**. Because v0.2.0 is not published until step 11, step 9 pins an exact consolidated commit, never the not-yet-existing tag; a post-step-11 follow-up may switch to the registry/tag. | *Cross-repo; requires write access to those repos; all source redirects, kinetic-signals boundary updates, and the Limen-Capital dependency/docs migration plus de-vendoring tests must land before archiving; no active routing path may still instantiate or call the vendored implementation* |
@@ -715,7 +749,8 @@ hard gates:
 
 - **Step 5** (conditional removal) — remove it only when the destination or an explicit
   no-successor retirement is decided and recorded; otherwise carry it temporarily as a
-  deprecated, documented-as-out-of-scope compatibility function.
+  deprecated, documented-as-out-of-scope compatibility function that warns under its
+  own name (inline `Base.depwarn` or `Base.@deprecate`; see [Deprecation mechanics](#deprecation-mechanics)).
 - **Step 8** (`v0.2.0`) — the migration guide either names where to get it, with a working
   reference (a repository and, if it has landed, a version or commit), **or** plainly
   documents the owner's decision to retire it without a successor.
@@ -724,8 +759,8 @@ hard gates:
 
 "Decided" means a named destination, not an intention. If the decision is still open when
 step 5 comes up, the correct move is to carry `adapt_leak!` forward temporarily as a
-deprecated, documented-as-out-of-scope function rather than to drop it — an acknowledged
-scope wart beats a broken upgrade path.
+deprecated, documented-as-out-of-scope function that warns under its own name rather
+than to drop it — an acknowledged scope wart beats a broken upgrade path.
 
 ### Gate: the `spike_density` field name must be settled before the router lands
 
@@ -807,9 +842,12 @@ No repository is archived before its supported upgrade path is published.
    [field-name gate](#gate-the-spike_density-field-name-must-be-settled-before-the-router-lands),
    an unanswered decision requires step 5 to port the existing name.
 5. **Alias deprecation mechanism — decided:** `Base.@deprecate_binding` for every
-   deprecated alias (types, constants, and functions). Wrapper functions and
-   documentation-only silent aliases are not used. Step 6 tests binding-level
-   warnings and binding-kind preservation.
+   deprecated alias (types, constants, and functions). Those aliases are not rewritten
+   as wrapper functions, and documentation-only silent aliases are not used. A
+   same-name carried function (`adapt_leak!`) is not an alias: it warns via inline
+   `Base.depwarn` or `Base.@deprecate` to an `_`-prefixed implementation. Step 6 tests
+   binding-level warnings and binding-kind preservation for aliases, plus the
+   same-name warning when `adapt_leak!` is carried.
 6. **Confirm** that Limen-Capital's dependency migration is owned by
    `rmems/Limen-Capital#9`. It does not block implementation in this repository, but its
    UUID/source/revision plus README and `docs/deps.md` updates are a hard step-12 archive

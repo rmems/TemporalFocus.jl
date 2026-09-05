@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision, adapter and precision policies, migration sequence, and consumer upgrade
   matrix for folding `rmems/NeuroPulse.jl` and `rmems/SpikeStream.jl` into this package.
   Planning only — no source code is migrated by this change.
+- Boundary docs (`README.md`, `AGENTS.md`, `REVIEW.md`): finance/HFT exclusion and a
+  pending-broadening caveat that ADR 0001 is accepted but not yet in effect.
 
 ### Changed
 
