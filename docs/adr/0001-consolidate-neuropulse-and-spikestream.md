@@ -422,11 +422,12 @@ migration.
 | `burst_intervals_by_neuron(buffer::TemporalBuffer, current_time::Real; max_isi::Real=0.02, min_spikes::Int=3, ignore_values::Bool=false) -> Dict{Int,Vector{Tuple{Float64,Float64}}}` | Buffer overload of the interval adapter, after applying the buffer window. |
 | `normalized_feature_vector_f32(train::SpikeTrain, neuron_id::Integer; t_start=nothing, t_end=nothing, max_density::Real=1000.0, ignore_values::Bool=false) -> Vector{Float32}` | Single-neuron Float32 convenience path. Same projection and `ignore_values` contract as `spike_times`; then the step-3 timestamp wrapper. No whole-train or grouped overload. Result is exactly four `Float32` values, not the `normalized::Vector{Float64}` field of `spike_features_by_neuron`. |
 | `normalized_feature_vector_f32(buffer::TemporalBuffer, neuron_id::Integer, current_time::Real; t_start=nothing, t_end=nothing, max_density::Real=1000.0, ignore_values::Bool=false) -> Vector{Float32}` | Buffer overload of the same name. `neuron_id` then positional required `current_time`; same window/`current_time` contract as the other buffer adapters. |
-| `SpikeTrain(times::AbstractVector{<:Real}; neuron_id, value=1.0f0, check_precision::Symbol=:collisions)` | Reverse direction. For **non-empty** `times`, `neuron_id` is a required keyword and the precision modes are fixed below. **Empty** `times` (`Float64[]`, `Int[]`, and other empty `AbstractVector{<:Real}`) does **not** require `neuron_id`: it constructs an empty train, the same as `SpikeTrain()` / `SpikeTrain(SpikeEvent[])`. |
+| `SpikeTrain(times::AbstractVector{<:Real}; neuron_id=nothing, value=1.0f0, check_precision::Symbol=:collisions)` | Reverse direction. For **non-empty** `times`, `neuron_id` is a required keyword and the precision modes are fixed below. **Empty** `times` (`Float64[]`, `Int[]`, and other empty `AbstractVector{<:Real}`) does **not** require `neuron_id`: it constructs an empty train, the same as `SpikeTrain()` / `SpikeTrain(SpikeEvent[])`. |
 
 **Empty reverse-constructor input must not require `neuron_id`.** The planned
-`SpikeTrain(times::AbstractVector{<:Real}; neuron_id, …)` overload would otherwise
-capture `SpikeTrain(Float64[])` and `SpikeTrain(Int[])` and throw `UndefKeywordError`.
+`SpikeTrain(times::AbstractVector{<:Real}; neuron_id=nothing, …)` overload defaults
+`neuron_id` so `SpikeTrain(Float64[])` and `SpikeTrain(Int[])` reach the empty-input
+path instead of throwing `UndefKeywordError`.
 Those calls must keep constructing an empty `SpikeTrain` without keywords. The
 empty-`times` path is keyword-optional and falls through to the inner
 `SpikeTrain(SpikeEvent[])` constructor; `neuron_id` remains required only when
