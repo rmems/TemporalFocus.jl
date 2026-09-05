@@ -9,22 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docs/adr/0002-merge-temporalfocus-into-neuropulse.md`: superseding ADR.
+  Surviving package is `rmems/NeuroPulse.jl` (UUID `b7e4c3f2-…`). TemporalFocus
+  consolidates into NeuroPulse. Do not implement ADR 0001 / PR #54's
+  NP+SpikeStream → TemporalFocus sequence. Planning only — no source code is
+  migrated by this change.
 - `Base.isempty` for `SpikeTrain` and `TemporalBuffer`.
 - `Base.==`, `Base.isequal`, and `Base.hash` for `SpikeEvent`, `SpikeTrain`, and
   `TemporalBuffer` (content equality; float `isequal`/`hash` rules for Set/Dict).
 - Julia docstrings for all public exports (module, types, attention kernels, normalization).
 - Runnable usage examples under `examples/`.
 - Random-based property tests for normalize, temporal_weight, and prune!.
-- `docs/adr/0001-consolidate-neuropulse-and-spikestream.md`: portfolio-consolidation ADR
-  covering the pre-migration inventory, per-symbol dispositions, package-identity/UUID
-  decision, adapter and precision policies, migration sequence, and consumer upgrade
-  matrix for folding `rmems/NeuroPulse.jl` and `rmems/SpikeStream.jl` into this package.
-  Planning only — no source code is migrated by this change.
-- Boundary docs (`README.md`, `AGENTS.md`, `REVIEW.md`): finance/HFT exclusion and a
-  pending-broadening caveat that ADR 0001 is accepted but not yet in effect.
+- `docs/adr/0001-consolidate-neuropulse-and-spikestream.md`: historical inventory
+  and adapter/precision notes from PR #54. **Superseded by ADR 0002** — do not
+  implement its NP+SpikeStream → TemporalFocus sequence.
 
 ### Changed
 
+- Boundary docs (`README.md`, `AGENTS.md`, `REVIEW.md`) and ADR 0001 banner:
+  ADR 0001 / PR #54 is superseded; pointers now follow ADR 0002.
 - Post-transfer hygiene: docs, package metadata, and changelog links now point at
   `rmems/TemporalFocus.jl` (formerly Limen-Neural).
 - Expanded CI test matrix to macOS and Windows (Julia 1.11) alongside Ubuntu (Julia 1.9–1.12).
