@@ -32,8 +32,21 @@ It does not own:
 - transformer dimensions, token embeddings, or gating mechanisms
 - projector weights between SNN and LLM spaces
 - LLM-side fusion logic
+- finance/HFT semantics such as order books, positions, PnL, market data, or trading signals
 
-If a feature requires knowledge of tokens, embeddings, dense attention semantics, model-space projection weights, or synaptic plasticity rules, it belongs outside this repository.
+If a feature requires knowledge of tokens, embeddings, dense attention semantics,
+model-space projection weights, synaptic plasticity rules, or market/trading semantics,
+it belongs outside this repository.
+
+### Planned scope change
+
+[ADR 0001](docs/adr/0001-consolidate-neuropulse-and-spikestream.md) records an accepted
+decision to consolidate `rmems/NeuroPulse.jl` and `rmems/SpikeStream.jl` into this
+repository, which broadens the boundary above to add spike-stream feature extraction and
+an activity-routing kernel. **That change is not yet in effect** — the scope
+statement above describes what this package ships today, and the ADR describes what it
+will own once the migration lands. Everything else in the "does not own" list stays
+excluded, including runtime, plasticity, dense/LLM, and finance semantics.
 
 ## Interface Contract
 
@@ -117,3 +130,23 @@ The suite covers:
 
 Event counts are capped to avoid O(n²) blowup in pairwise attention. Output
 reports median time and allocations per case.
+
+## Experiments
+
+Reproducible spike-native experiments live under `experiments/`, in an isolated
+Julia environment. CairoMakie and other visualization/data dependencies are
+**not** package dependencies and are **not** wired into CI or `Pkg.test()`.
+
+```bash
+julia --project=experiments -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+julia --project=experiments experiments/run_all.jl
+```
+
+Each experiment emits `config.toml`, `metrics.csv`, `figure.png`, and
+`summary.md` into `experiments/results/<slug>/` through the shared harness in
+`experiments/src/ExperimentUtils.jl`. Generated results are git-ignored and
+rebuilt by the command above; `run_all.jl` runs whichever experiment scripts are
+present, in a deterministic order.
+
+See [`experiments/README.md`](experiments/README.md) for the artifact contract,
+the harness API, and how to add an experiment.
