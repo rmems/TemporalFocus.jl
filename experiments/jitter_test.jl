@@ -9,6 +9,10 @@ Run from the repository root:
     julia --project=experiments -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
     julia --project=experiments experiments/jitter_test.jl
 
+Artifacts land in `experiments/results/jitter_test/` via the shared #61
+harness (`using ExperimentUtils`). Results are git-ignored and regenerated
+by the command above.
+
 # Scene
 
 A fixed eight-neuron scene with one source spike per neuron at `T_REF` and a
@@ -53,13 +57,11 @@ so either convention can be recomputed from `metrics.csv`.
 """
 
 using CairoMakie
+using ExperimentUtils
 using Printf
 using Random
 using Statistics
 using TemporalFocus
-
-include(joinpath(@__DIR__, "src", "ExperimentUtils.jl"))
-using .ExperimentUtils
 
 const SLUG = "jitter_test"
 
@@ -962,13 +964,13 @@ function main()
         "rng" => "Random.MersenneTwister",
         "readout" => "identity",
         "output_distance_metric" => "relative_l2",
-        "julia_version" => string(VERSION),
         "n_rows" => length(rows),
     )
 
     config_path = write_config(SLUG, config)
     metrics_path = write_metrics(SLUG, rows)
 
+    CairoMakie.activate!(type = "png")
     fig = build_figure(summaries)
     fig_path = figure_path(SLUG)
     save(fig_path, fig; px_per_unit = 1)

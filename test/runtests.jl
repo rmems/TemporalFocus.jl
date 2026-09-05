@@ -3,6 +3,13 @@
 using TemporalFocus
 using Test
 using Random
+using TOML
+
+# The experiment harness depends only on standard libraries, so the artifact
+# contract used by experiments/ is covered here without instantiating
+# experiments/Project.toml.
+include(joinpath(@__DIR__, "..", "experiments", "src", "ExperimentUtils.jl"))
+using .ExperimentUtils
 
 @testset "TemporalFocus" begin
     @testset "Discrete Attention" begin
@@ -580,4 +587,128 @@ using Random
         end
     end
 
+end
+
+@testset "Experiment harness" begin
+    mktempdir() do tmp
+        withenv("TEMPORALFOCUS_RESULTS_DIR" => tmp) do
+            @testset "repo-relative paths" begin
+                root = repo_root()
+                @test isabspath(root)
+                @test isfile(joinpath(root, "Project.toml"))
+                @test isfile(joinpath(root, "experiments", "run_all.jl"))
+            end
+
+            @testset "result_dir / figure_path" begin
+                dir = result_dir("smoke-slug")
+                @test dir == joinpath(tmp, "smoke-slug")
+                @test isdir(dir)
+                @test figure_path("smoke-slug") == joinpath(dir, "figure.png")
+                @test figure_path("smoke-slug", "curves.png") == joinpath(dir, "curves.png")
+
+                @test_throws ArgumentError result_dir("nested/slug")
+                @test_throws ArgumentError result_dir("../escape")
+                @test_throws ArgumentError result_dir("")
+                @test_throws ArgumentError figure_path("smoke-slug", "../figure.png")
+
+                # A relative results root still yields an absolute directory.
+                cd(tmp) do
+                    withenv("TEMPORALFOCUS_RESULTS_DIR" => "relative-results") do
+                        relative = result_dir("smoke-slug")
+                        @test isabspath(relative)
+                        @test isdir(relative)
+                    end
+                end
+            end
+
+            @testset "write_config" begin
+                path = write_config(
+                    "smoke-slug",
+                    Dict(
+                        "seed" => 42,
+                        "tau" => 0.2f0,
+                        "mode" => :temporal,
+                        "taus" => Float32[0.1, 0.25],
+                    ),
+                )
+                text = read(path, String)
+                @test path == joinpath(tmp, "smoke-slug", "config.toml")
+                @test occursin("seed = 42", text)
+                # Float32 is widened through its shortest decimal form.
+                @test occursin("tau = 0.2\n", text)
+                @test occursin("taus = [0.1, 0.25]", text)
+                @test occursin("mode = \"temporal\"", text)
+                @test occursin("[provenance]", text)
+                @test occursin("julia_version = \"$(VERSION)\"", text)
+
+                # A caller-supplied provenance table is preserved.
+                supplied = write_config(
+                    "smoke-slug",
+                    Dict("provenance" => Dict("git_commit" => "abc123")),
+                )
+                @test occursin("git_commit = \"abc123\"", read(supplied, String))
+
+                # Non-finite floating-point sentinels stay TOML floats rather
+                # than being silently converted to strings.
+                nonfinite = write_config(
+                    "smoke-slug",
+                    Dict("nan" => NaN32, "pos_inf" => Inf32, "neg_inf" => -Inf),
+                )
+                parsed = TOML.parsefile(nonfinite)
+                @test parsed["nan"] isa AbstractFloat
+                @test isnan(parsed["nan"])
+                @test parsed["pos_inf"] == Inf
+                @test parsed["neg_inf"] == -Inf
+            end
+
+            @testset "write_metrics" begin
+                rows = [
+                    (dt = 0.1f0, weight = 0.6065307f0, label = "near"),
+                    (dt = -0.1f0, weight = 0.6065307f0, label = "far, noisy"),
+                ]
+                path = write_metrics("smoke-slug", rows)
+                lines = readlines(path)
+                @test path == joinpath(tmp, "smoke-slug", "metrics.csv")
+                @test lines[1] == "dt,weight,label"
+                @test lines[2] == "0.1,0.6065307,near"
+                @test lines[3] == "-0.1,0.6065307,\"far, noisy\""
+
+                # Same rows in, same bytes out.
+                @test read(write_metrics("smoke-slug", rows), String) == read(path, String)
+
+                @test_throws ArgumentError write_metrics("smoke-slug", NamedTuple[])
+                @test_throws ArgumentError write_metrics("smoke-slug", [(a = 1,), (b = 2,)])
+                @test_throws ArgumentError write_metrics("smoke-slug", [1, 2])
+            end
+
+            @testset "float formatting" begin
+                path = write_metrics(
+                    "smoke-slug",
+                    [(
+                        f32 = 0.2f0,
+                        f64 = 0.1234567890123456,
+                        wide = big"0.1",
+                        half = Float16(0.5),
+                        nan = NaN32,
+                        inf = -Inf,
+                    )],
+                )
+                cells = split(readlines(path)[2], ",")
+                # Each type keeps its own precision; nothing is narrowed.
+                @test cells[1] == "0.2"
+                @test cells[2] == "0.1234567890123456"
+                @test parse(BigFloat, cells[3]) == big"0.1"
+                @test cells[4] == "0.5"
+                @test cells[5] == "NaN"
+                @test cells[6] == "-Inf"
+            end
+
+            @testset "write_summary" begin
+                path = write_summary("smoke-slug", "# Result\n\nHypothesis supported.")
+                @test path == joinpath(tmp, "smoke-slug", "summary.md")
+                @test read(path, String) == "# Result\n\nHypothesis supported.\n"
+                @test read(write_summary("smoke-slug", "already\n"), String) == "already\n"
+            end
+        end
+    end
 end
