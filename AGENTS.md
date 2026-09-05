@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-22
+> Last updated: 2026-09-05
 
 ## Project overview
 
@@ -23,8 +23,9 @@ See [README Scope](README.md#scope) for the human-facing boundary documentation.
 - Cross-modal projector weights between SNN (Spiking Neural Network) and LLM spaces
 - Runtime execution or event-loop scheduling
 - LLM-side fusion logic
+- Finance/HFT semantics — order books, positions, PnL, market data, trading signals
 
-If a feature requires knowledge of tokens, embeddings, dense attention semantics, or synaptic plasticity rules, it belongs outside this repository.
+If a feature requires knowledge of tokens, embeddings, dense attention semantics, synaptic plasticity rules, or market/trading semantics, it belongs outside this repository.
 
 ## Dev environment
 
@@ -75,7 +76,18 @@ julia --project=experiments experiments/run_all.jl
 
 - If a PR introduces STDP, plasticity, or learning rules, it belongs in a dedicated plasticity package
 - If a PR touches tokenization, embeddings, or transformer logic, it belongs in a different repo
+- If a PR introduces finance/HFT semantics, redirect it to a downstream application that
+  consumes this package (e.g. `rmems/Limen-Capital`, `rmems/DendriteTrader.jl`) — this
+  package stays domain-neutral, and the exclusion holds before and after the migration below
 - Reviewers should reject scope creep with a redirect to the appropriate package
+- **Pending boundary change:** [ADR 0001](docs/adr/0001-consolidate-neuropulse-and-spikestream.md)
+  accepts a one-time broadening to also own spike-stream feature extraction and an
+  activity-routing kernel (consolidating `rmems/NeuroPulse.jl` and `rmems/SpikeStream.jl`).
+  That kernel is deterministic and self-contained but **stateful** — it may mutate only
+  the pre-allocated buffers of the router it is handed, with no I/O, clock, ambient or
+  global state, hot-path allocation, or weight updates. Enforce that list, not the word
+  "pure". The broadening is **not in effect** — enforce the Scope list above until the
+  migration lands and updates it. The out-of-scope list is unchanged either way.
 
 ## Cursor Cloud specific instructions
 
