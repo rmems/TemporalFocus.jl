@@ -1,6 +1,12 @@
-# TemporalFocus.jl
+# TemporalFocus.jl (archived predecessor)
 
 Pure spike-native temporal interaction primitives for the Spikenaut ecosystem.
+
+> **Retired package:** [NeuroPulse.jl](https://github.com/rmems/NeuroPulse.jl) is
+> now the canonical repository and Julia package. TemporalFocus’s
+> attention, buffer, and normalization implementation has been imported there.
+> This documentation is retained for historical reference and is not a current
+> installation or development target.
 
 ## Scope
 
@@ -16,14 +22,15 @@ It does **not** own STDP or other plasticity rules, tokenization/embeddings,
 transformer attention, cross-modal projector weights, runtime scheduling, or
 LLM-side fusion logic. Those belong in dedicated packages.
 
-See the repository [README](https://github.com/rmems/TemporalFocus.jl)
-for the full interface contract and non-goals.
+See the historical repository [README](https://github.com/rmems/TemporalFocus.jl)
+for the full interface contract and non-goals. For current installation and
+development, use [NeuroPulse.jl](https://github.com/rmems/NeuroPulse.jl).
 
 ## Installation
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/rmems/TemporalFocus.jl")
+Pkg.add(url="https://github.com/rmems/NeuroPulse.jl")
 ```
 
 Requires Julia 1.9+.

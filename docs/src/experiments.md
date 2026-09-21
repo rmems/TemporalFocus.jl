@@ -9,7 +9,11 @@ It does not regenerate results. Each script writes
 The artifact contract, harness API, and how to add an experiment are in
 [`experiments/README.md`](https://github.com/rmems/TemporalFocus.jl/blob/main/experiments/README.md).
 
-## Reproduce
+## Historical reproduction
+
+These commands reproduce the archived artifacts; they are not an active
+development workflow. New work belongs in
+[NeuroPulse.jl](https://github.com/rmems/NeuroPulse.jl).
 
 ```bash
 julia --project=experiments -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'

@@ -1,6 +1,6 @@
 # ADR 0002 — Merge TemporalFocus.jl into NeuroPulse.jl
 
-- **Status:** Accepted (plan) — supersedes ADR 0001 / PR #54
+- **Status:** Accepted and implemented — historical plan; supersedes ADR 0001 / PR #54
 - **Date:** 2026-09-05
 - **Owner decision:** Raul — surviving package/repo is `NeuroPulse.jl`
 - **Supersedes:** [ADR 0001](0001-consolidate-neuropulse-and-spikestream.md)
@@ -11,8 +11,11 @@
 - **Related in-flight:** [NeuroPulse.jl#42](https://github.com/rmems/NeuroPulse.jl/pull/42)
   (Closes NeuroPulse #40) — README public-identity fix. This ADR does not edit NeuroPulse.
 
-This ADR is planning-only. **No source code moves in the change that introduces this
-document.** Implementers must not follow ADR 0001's import sequence.
+This ADR was planning-only when written. **The migration has since landed in
+NeuroPulse.jl** (including the attention surface and parity tests in NeuroPulse
+PR #45); this document is retained as the historical decision record. The
+sequence below is not an instruction to begin a new migration, and implementers
+must not follow ADR 0001's import sequence.
 
 ---
 
@@ -121,9 +124,9 @@ step 2.
 | # | Step | Status / gate |
 |---|---|---|
 | 1 | TemporalFocus `main` cleaned (experiments + gallery + 1.12 CI) | **DONE** |
-| 2 | In **NeuroPulse**: import TemporalFocus attention / buffer / normalization + parity tests. History-aware import preferred (`git subtree` or unrelated-histories merge); fallback is a file copy plus source SHA recorded in NeuroPulse's changelog. | NeuroPulse's existing suite and the ported TemporalFocus suite both pass. Do not import SpikeStream here. |
-| 3 | Upgrade notes in NeuroPulse; TemporalFocus README becomes a successor pointer to `rmems/NeuroPulse.jl`. | Readers of this repo are sent to the survivor. No archive yet. |
-| 4 | Migrate or document open TemporalFocus issues / PRs that should live on NeuroPulse. | Every still-open item has a destination. |
+| 2 | In **NeuroPulse**: import TemporalFocus attention / buffer / normalization + parity tests. | **DONE** in NeuroPulse PR #45. Do not import SpikeStream here. |
+| 3 | Upgrade notes in NeuroPulse; TemporalFocus README becomes a successor pointer to `rmems/NeuroPulse.jl`. | **DONE** in NeuroPulse docs and this retirement update. |
+| 4 | Migrate or document open TemporalFocus issues / PRs that should live on NeuroPulse. | **DONE for the current source state**; remaining GitHub metadata cleanup is owner action. |
 | 5 | Optional SpikeStream import into NeuroPulse (adapters + precision policy below). | **Later. Not blocking step 2.** |
 | 6 | Human archive of TemporalFocus (and SpikeStream if/when imported). | **Out of this workstream.** Owner action only. Gated on Limen-Capital pin work and published upgrade notes. |
 
@@ -132,7 +135,7 @@ is TemporalFocus → NeuroPulse, implemented in the NeuroPulse tree.
 
 **Do not edit NeuroPulse from this TemporalFocus PR.** Identity-README work is
 already in [NeuroPulse.jl#42](https://github.com/rmems/NeuroPulse.jl/pull/42).
-Step 2 is a later NeuroPulse PR.
+The import and parity work landed in [NeuroPulse.jl#45](https://github.com/rmems/NeuroPulse.jl/pull/45).
 
 ---
 

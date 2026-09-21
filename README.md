@@ -1,9 +1,15 @@
-# TemporalFocus.jl
+# TemporalFocus.jl (archived predecessor)
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://rmems.github.io/TemporalFocus.jl/dev/)
 
-Pure spike-native temporal interaction primitives for the Spikenaut ecosystem.
+Historical spike-native temporal interaction primitives for the Spikenaut ecosystem.
+
+> **Retired package:** TemporalFocus.jl has been consolidated into
+> [NeuroPulse.jl](https://github.com/rmems/NeuroPulse.jl), which is now the
+> canonical repository and Julia package. This repository is preserved for
+> source history, experiments, and provenance; it is no longer developed
+> independently. New users should install and contribute to NeuroPulse.
 
 **Repository:** [github.com/rmems/TemporalFocus.jl](https://github.com/rmems/TemporalFocus.jl)
 
@@ -38,15 +44,16 @@ If a feature requires knowledge of tokens, embeddings, dense attention semantics
 model-space projection weights, synaptic plasticity rules, or market/trading semantics,
 it belongs outside this repository.
 
-### Planned consolidation
+### Completed consolidation
 
-[ADR 0002](docs/adr/0002-merge-temporalfocus-into-neuropulse.md) records the accepted
-plan: this package consolidates **into** `rmems/NeuroPulse.jl` (UUID `b7e4c3f2-…`).
-That supersedes [ADR 0001](docs/adr/0001-consolidate-neuropulse-and-spikestream.md) /
-PR #54, which had the direction reversed. **Do not import NeuroPulse or SpikeStream
-here.** The scope statement above is what this repository ships today until the
-NeuroPulse import lands. Finance/HFT, runtime, plasticity, and dense/LLM stay
-excluded either way.
+[ADR 0002](docs/adr/0002-merge-temporalfocus-into-neuropulse.md) records the
+completed decision and migration: the attention, buffer, and normalization
+surface now lives in `rmems/NeuroPulse.jl` under the canonical UUID
+`b7e4c3f2-1d2e-4a5b-8c9d-0e1f2a3b4c5e`. It supersedes
+[ADR 0001](docs/adr/0001-consolidate-neuropulse-and-spikestream.md) / PR #54,
+which had the direction reversed. **Do not import NeuroPulse or SpikeStream
+here.** The scope statement and implementation below are retained as historical
+provenance. Finance/HFT, runtime, plasticity, and dense/LLM remain excluded.
 
 ## Interface Contract
 
@@ -61,7 +68,7 @@ Outputs from this package should remain pure SNN quantities or direct neuron-spa
 - spike-derived weight vectors
 - neuron-space readout vectors
 
-## Current API
+## Historical API
 
 - `spike_attention_discrete`
 - `spike_attention_temporal`
@@ -71,7 +78,7 @@ Outputs from this package should remain pure SNN quantities or direct neuron-spa
 - `normalize_max!`
 - `prune!`
 
-## Experiment Gallery
+## Historical Experiment Gallery
 
 Spike-native characterization experiments (recency, kernel regimes, distractors,
 jitter, streaming focus, τ/window) live under [`experiments/`](experiments/).
@@ -80,9 +87,10 @@ artifact layout.
 
 **→ [Experiment Gallery](https://rmems.github.io/TemporalFocus.jl/dev/experiments/)**
 
-## Examples
+## Historical Examples
 
-Runnable scripts live under [`examples/`](examples/). From the repo root:
+The runnable scripts under [`examples/`](examples/) are retained for historical
+reproduction. From the archived repo root:
 
 ```bash
 julia --project=. examples/discrete_attention.jl
@@ -119,11 +127,13 @@ This repository should not accumulate adapter code for:
 - cross-modal projector training
 - hybrid orchestration
 
-## Benchmarks
+## Historical Benchmarks
 
 Local performance microbenchmarks live under `benchmark/` and use
 [BenchmarkTools.jl](https://github.com/JuliaCI/BenchmarkTools.jl). They are
 **not** a package dependency and are **not** wired into CI or `Pkg.test()`.
+
+For historical reproduction only:
 
 ```bash
 julia --project=benchmark -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
@@ -140,11 +150,13 @@ The suite covers:
 Event counts are capped to avoid O(n²) blowup in pairwise attention. Output
 reports median time and allocations per case.
 
-## Experiments
+## Historical Experiments
 
 Reproducible spike-native experiments live under `experiments/`, in an isolated
 Julia environment. CairoMakie and other visualization/data dependencies are
 **not** package dependencies and are **not** wired into CI or `Pkg.test()`.
+
+For historical reproduction only:
 
 ```bash
 julia --project=experiments -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
