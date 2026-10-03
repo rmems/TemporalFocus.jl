@@ -8,7 +8,7 @@
 #
 # Installs only what this repo's CI and manifests need:
 #   - apt: curl, ca-certificates
-#   - juliaup 1.12 [default]
+#   - juliaup 1.22.7 with Julia 1.12 [default]
 #   - Pkg.instantiate() (committed Manifest.toml)
 #   - tool directories exposed to later shells (/etc/profile.d + /usr/local/bin links)
 #
@@ -42,9 +42,20 @@ apt_install curl ca-certificates
 # --- Julia (juliaup) ---
 # ci.yml and Documentation.yml use Julia 1.12.
 JULIA_CHANNEL="1.12"
+JULIAUP_VERSION="1.22.7"
+JULIAUP_INSTALLER_SHA256="2f6cb3beff3e14b78890fb52dc6d44ec2d2a5bf2c703d2d478d6e519c863eae0"
 export PATH="$HOME/.juliaup/bin:$PATH"
 if ! command -v juliaup >/dev/null 2>&1; then
-  curl -fsSL https://install.julialang.org | sh -s -- --yes --default-channel "$JULIA_CHANNEL"
+  installer="$(mktemp)"
+  trap 'rm -f "$installer"' EXIT
+  curl -fsSL \
+    "https://julialang-s3.julialang.org/juliaup/bin/juliainstaller-${JULIAUP_VERSION}-x86_64-unknown-linux-musl" \
+    -o "$installer"
+  printf '%s  %s\n' "$JULIAUP_INSTALLER_SHA256" "$installer" | sha256sum --check --status
+  chmod +x "$installer"
+  "$installer" --yes --default-channel "$JULIA_CHANNEL"
+  rm -f "$installer"
+  trap - EXIT
 fi
 if ! juliaup status | awk -v ch="$JULIA_CHANNEL" '{for (i = 1; i <= NF; i++) if ($i == ch) found = 1} END {exit !found}'; then
   juliaup add "$JULIA_CHANNEL"
