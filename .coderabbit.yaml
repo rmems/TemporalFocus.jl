@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit config for rmems/TemporalFocus.jl.
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  fail_commit_status: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+  - path: '{src,test,benchmark,examples,experiments}/**/*.jl'
+    instructions: 'Julia package code. `[compat] julia = "1.9"`; CI runs Julia 1.12. Do not use Base/stdlib APIs newer than the compat floor without raising it. Review for type stability in hot paths (concrete struct field types, no abstractly typed containers, no non-`const` globals, no `Any`-returning branches), avoidable allocations in inner loops, and changes to exported API. Scope boundary (REVIEW.md): tokenization, embeddings, transformer attention, STDP/plasticity, and finance/HFT logic belong outside this repo. Spike-native temporal attention is in scope. Flag imports of NeuroPulse/SpikeStream functionality.'
+  - path: '**/Project.toml'
+    instructions: Julia Project.toml. New `[deps]` entries should get a `[compat]` bound; flag widened or dropped bounds and any UUID change (UUIDs are immutable once registered). Release-prep PRs must not create git tags or run Registrator (RELEASING.md).
+  - path: '**/Manifest.toml'
+    instructions: Resolver output committed on purpose. Do not review it line by line; only flag a changed `julia_version`, churn that is not explained by a Project.toml change, or resolved versions that violate `[compat]`.
+  - path: .github/workflows/**
+    instructions: GitHub Actions workflows. Keep `permissions:` least-privilege and job commands in sync with the local gates documented in the repo. Every `uses:` is pinned to a full commit SHA today; new or bumped actions must be too.
+  tools:
+    actionlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
