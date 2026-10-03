@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# Draft CodeRabbit config for rmems/TemporalFocus.jl (generated locally, not pushed).
+# CodeRabbit config for rmems/TemporalFocus.jl.
 language: en-US
 reviews:
   profile: chill
@@ -10,7 +10,7 @@ reviews:
     drafts: false
   path_instructions:
   - path: '{src,test,benchmark,examples,experiments}/**/*.jl'
-    instructions: 'Julia package code. `[compat] julia = "1.9"`; CI runs Julia 1.12. Do not use Base/stdlib APIs newer than the compat floor without raising it. Review for type stability in hot paths (concrete struct field types, no abstractly typed containers, no non-`const` globals, no `Any`-returning branches), avoidable allocations in inner loops, and changes to exported API. Scope boundary (REVIEW.md): token/embedding, attention semantics, plasticity or trading logic belongs outside this repo; flag imports of NeuroPulse/SpikeStream functionality.'
+    instructions: 'Julia package code. `[compat] julia = "1.9"`; CI runs Julia 1.12. Do not use Base/stdlib APIs newer than the compat floor without raising it. Review for type stability in hot paths (concrete struct field types, no abstractly typed containers, no non-`const` globals, no `Any`-returning branches), avoidable allocations in inner loops, and changes to exported API. Scope boundary (REVIEW.md): tokenization, embeddings, transformer attention, STDP/plasticity, and finance/HFT logic belong outside this repo. Spike-native temporal attention is in scope. Flag imports of NeuroPulse/SpikeStream functionality.'
   - path: '**/Project.toml'
     instructions: Julia Project.toml. New `[deps]` entries should get a `[compat]` bound; flag widened or dropped bounds and any UUID change (UUIDs are immutable once registered). Release-prep PRs must not create git tags or run Registrator (RELEASING.md).
   - path: '**/Manifest.toml'
