@@ -1,6 +1,15 @@
 # API Reference
 
-All public exports from TemporalFocus.jl.
+All public exports from the **legacy** TemporalFocus.jl package in this repository.
+
+!!! danger "Deprecated — maintained in NeuroPulse.jl"
+    The same API is exported from **[NeuroPulse](https://github.com/rmems/NeuroPulse.jl)**
+    (`using NeuroPulse`) under `src/attention/`. NeuroPulse v0.1.0 (`main` @ `2c5c913`)
+    matches TemporalFocus `src/` at `eb38c70`. New code should depend on NeuroPulse only.
+
+    Do **not** `using TemporalFocus` and `using NeuroPulse` in the same session: shared export
+    names (for example `SpikeEvent`) become ambiguous, and the two packages' spike types do not
+    interoperate.
 
 !!! note "Docstrings"
     Full docstring rendering lands with #17. Until then, signatures below

@@ -5,7 +5,17 @@
 
 Pure spike-native temporal interaction primitives for the Spikenaut ecosystem.
 
-**Repository:** [github.com/rmems/TemporalFocus.jl](https://github.com/rmems/TemporalFocus.jl)
+> **Deprecation:** New projects should use **[NeuroPulse.jl](https://github.com/rmems/NeuroPulse.jl)**
+> (v0.1.0+). The attention surface that lived here was copied into NeuroPulse at
+> commit `2c5c913` (`src/attention/`, sourced from TemporalFocus `eb38c70`). This
+> repository is frozen for that API; maintenance and bugfixes land in NeuroPulse.
+>
+> **Do not load both packages in one session.** `using TemporalFocus` and
+> `using NeuroPulse` together makes names such as `SpikeEvent` ambiguous, and
+> `TemporalFocus.SpikeEvent` values are not interchangeable with
+> `NeuroPulse.SpikeEvent` (distinct types even when fields match).
+
+**Repository:** [github.com/rmems/TemporalFocus.jl](https://github.com/rmems/TemporalFocus.jl) (legacy snapshot)
 
 **Wiki:** GitHub wiki is enabled for this repo but not yet populated (no pages as of the
 Limen-Neural → rmems transfer). When content exists, clone
@@ -38,15 +48,30 @@ If a feature requires knowledge of tokens, embeddings, dense attention semantics
 model-space projection weights, synaptic plasticity rules, or market/trading semantics,
 it belongs outside this repository.
 
-### Planned consolidation
+### Successor: NeuroPulse.jl
 
-[ADR 0002](docs/adr/0002-merge-temporalfocus-into-neuropulse.md) records the accepted
-plan: this package consolidates **into** `rmems/NeuroPulse.jl` (UUID `b7e4c3f2-…`).
-That supersedes [ADR 0001](docs/adr/0001-consolidate-neuropulse-and-spikestream.md) /
-PR #54, which had the direction reversed. **Do not import NeuroPulse or SpikeStream
-here.** The scope statement above is what this repository ships today until the
-NeuroPulse import lands. Finance/HFT, runtime, plasticity, and dense/LLM stay
-excluded either way.
+[ADR 0002](docs/adr/0002-merge-temporalfocus-into-neuropulse.md) planned consolidation
+**into** [`rmems/NeuroPulse.jl`](https://github.com/rmems/NeuroPulse.jl) (package UUID
+`b7e4c3f2-1d2e-4a5b-8c9d-0e1f2a3b4c5e`). **That import has landed** on NeuroPulse
+`main` (`2c5c913`, v0.1.0): coincidence attention, buffers, and normalization live
+under `src/attention/` and are exported from the `NeuroPulse` module.
+
+Install and import the maintained surface:
+
+```julia
+using Pkg
+Pkg.add(url="https://github.com/rmems/NeuroPulse.jl")
+
+using NeuroPulse
+
+src = SpikeTrain([SpikeEvent(1, 0.0f0)])
+y = spike_attention_discrete(src, src, Float32[1])
+```
+
+This repo’s `src/` has not changed since NeuroPulse copied it at `eb38c70`. **Do not
+import NeuroPulse or SpikeStream into this repository** (movement is one-way). Finance/HFT,
+runtime, plasticity, and dense/LLM semantics stay excluded in both packages; see the scope
+list above.
 
 ## Interface Contract
 

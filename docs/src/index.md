@@ -2,6 +2,18 @@
 
 Pure spike-native temporal interaction primitives for the Spikenaut ecosystem.
 
+!!! danger "Deprecated — use NeuroPulse.jl"
+    **[NeuroPulse.jl](https://github.com/rmems/NeuroPulse.jl)** (v0.1.0+, commit `2c5c913` on
+    `main`) is the maintained home for this attention code (`src/attention/`, copied from
+    TemporalFocus `eb38c70`). TemporalFocus.jl is a legacy snapshot; do not start new work
+    against this package.
+
+    **Never load both packages in one Julia session.** `using TemporalFocus` together with
+    `using NeuroPulse` makes exported names such as `SpikeEvent` ambiguous. Even when you
+    qualify a name, `TemporalFocus.SpikeEvent` and `NeuroPulse.SpikeEvent` are different
+    types — spike trains and buffers from one package cannot be passed to APIs expecting the
+    other without explicit conversion.
+
 ## Scope
 
 TemporalFocus owns:
@@ -19,19 +31,28 @@ LLM-side fusion logic. Those belong in dedicated packages.
 See the repository [README](https://github.com/rmems/TemporalFocus.jl)
 for the full interface contract and non-goals.
 
-## Installation
+## Installation (NeuroPulse — preferred)
+
+```julia
+using Pkg
+Pkg.add(url="https://github.com/rmems/NeuroPulse.jl")
+```
+
+Requires Julia 1.9+.
+
+### Legacy: this repository only
+
+If you must pin this exact tree (not recommended for new code):
 
 ```julia
 using Pkg
 Pkg.add(url="https://github.com/rmems/TemporalFocus.jl")
 ```
 
-Requires Julia 1.9+.
-
-## Quick start
+## Quick start (NeuroPulse)
 
 ```julia
-using TemporalFocus
+using NeuroPulse
 
 # Spike events and trains
 src = SpikeTrain([SpikeEvent(1, 0.0f0), SpikeEvent(2, 1.0f0)])
@@ -59,7 +80,11 @@ wt = temporal_weight(2.0f0, 5.0f0)
 prune!(src_buf, 12.0f0)
 ```
 
+The examples above are identical on NeuroPulse because the attention module was ported
+from TemporalFocus `eb38c70`. Hosted docs for NeuroPulse:
+[NeuroPulse.jl dev docs](https://rmems.github.io/NeuroPulse.jl/dev/) when published.
+
 ## Documentation
 
-- [Experiment Gallery](experiments.md) — index of landed characterization experiments
-- [API reference](api.md) — all public exports
+- [Experiment Gallery](experiments.md) — index of landed characterization experiments (this repo)
+- [API reference](api.md) — public exports of the **legacy** TemporalFocus package

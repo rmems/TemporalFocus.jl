@@ -1,6 +1,9 @@
 # ADR 0002 — Merge TemporalFocus.jl into NeuroPulse.jl
 
-- **Status:** Accepted (plan) — supersedes ADR 0001 / PR #54
+- **Status:** Accepted — TemporalFocus attention import **landed** in NeuroPulse `main`
+  (`2c5c913`, v0.1.0, `src/attention/` from TemporalFocus `eb38c70`). Step 3 README/docs
+  pointer updates live on TemporalFocus `main` after the successor-docs PR merges.
+  Supersedes ADR 0001 / PR #54.
 - **Date:** 2026-09-05
 - **Owner decision:** Raul — surviving package/repo is `NeuroPulse.jl`
 - **Supersedes:** [ADR 0001](0001-consolidate-neuropulse-and-spikestream.md)
@@ -121,8 +124,8 @@ step 2.
 | # | Step | Status / gate |
 |---|---|---|
 | 1 | TemporalFocus `main` cleaned (experiments + gallery + 1.12 CI) | **DONE** |
-| 2 | In **NeuroPulse**: import TemporalFocus attention / buffer / normalization + parity tests. History-aware import preferred (`git subtree` or unrelated-histories merge); fallback is a file copy plus source SHA recorded in NeuroPulse's changelog. | NeuroPulse's existing suite and the ported TemporalFocus suite both pass. Do not import SpikeStream here. |
-| 3 | Upgrade notes in NeuroPulse; TemporalFocus README becomes a successor pointer to `rmems/NeuroPulse.jl`. | Readers of this repo are sent to the survivor. No archive yet. |
+| 2 | In **NeuroPulse**: import TemporalFocus attention / buffer / normalization + parity tests. History-aware import preferred (`git subtree` or unrelated-histories merge); fallback is a file copy plus source SHA recorded in NeuroPulse's changelog. | **DONE** (`2c5c913`, file copy from `eb38c70`). |
+| 3 | Upgrade notes in NeuroPulse; TemporalFocus README becomes a successor pointer to `rmems/NeuroPulse.jl`. | **In progress** — TemporalFocus README + Documenter pages redirect to NeuroPulse; no archive yet. |
 | 4 | Migrate or document open TemporalFocus issues / PRs that should live on NeuroPulse. | Every still-open item has a destination. |
 | 5 | Optional SpikeStream import into NeuroPulse (adapters + precision policy below). | **Later. Not blocking step 2.** |
 | 6 | Human archive of TemporalFocus (and SpikeStream if/when imported). | **Out of this workstream.** Owner action only. Gated on Limen-Capital pin work and published upgrade notes. |

@@ -1,5 +1,12 @@
 # Experiment Gallery
 
+!!! warning "Attention kernels: use NeuroPulse for new work"
+    Coincidence attention in new applications should come from
+    **[NeuroPulse.jl](https://github.com/rmems/NeuroPulse.jl)** (`using NeuroPulse`), not
+    TemporalFocus.jl. Scripts in this gallery still `using TemporalFocus` against the local
+    tree for reproducibility. Do not load both packages in one session — `SpikeEvent` and
+    related types will conflict.
+
 This page is an index of the spike-native characterization experiments that
 already live under [`experiments/`](https://github.com/rmems/TemporalFocus.jl/tree/main/experiments).
 It does not regenerate results. Each script writes
