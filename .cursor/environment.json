@@ -1,0 +1,4 @@
+{
+  "name": "TemporalFocus.jl",
+  "install": "bash .cursor/install.sh"
+}
