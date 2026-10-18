@@ -21,7 +21,7 @@ the version recorded in the committed `Manifest.toml`.
 
 CI (`.github/workflows/ci.yml`) runs `julia-runtest` on Julia 1.12 only; `Documentation.yml` builds the docs and deploys on push and tags.
 `AGENTS.md` says CI covers Julia 1.9 to 1.12 plus macOS and Windows, and "50 tests"; neither matches the workflow or the current suite.
-No formatter or linter is configured, so there is no lint gate to run.
+No Julia formatter or linter is configured. Markdown is linted by Codacy's markdownlint (`.codacy.yml`, `.markdownlint.yaml`; MD013, MD033 and MD041 are off), so keep `CLAUDE.md` clean under those rules.
 
 ## Architecture map
 
@@ -44,7 +44,7 @@ No formatter or linter is configured, so there is no lint gate to run.
 
 ## Gotchas
 
-- Never publish: no `Registrator` comments, tags, or registry commands. `RELEASING.md` flags the template-looking UUID in `Project.toml` as a blocker before first registration.
+- Never tag, register, or publish from an agent session. Registration (`@JuliaRegistrator register`) is a human post-merge step in `RELEASING.md`, not a task for agents. `RELEASING.md` flags the template-looking UUID in `Project.toml` as a blocker before first registration.
 - `Manifest.toml` is tracked even though `.gitignore` lists `/Manifest.toml`; do not commit changes to it as a side effect.
 - `Project.toml` has no `exclude` list, so adding this file needs no manifest change.
 - `.claude/` is not gitignored; do not commit local agent state there.
