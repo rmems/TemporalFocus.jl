@@ -19,6 +19,49 @@ LLM-side fusion logic. Those belong in dedicated packages.
 See the repository [README](https://github.com/rmems/TemporalFocus.jl)
 for the full interface contract and non-goals.
 
+## Overlap with NeuroPulse.jl
+
+`rmems/NeuroPulse.jl` (`f78370eb`, 2026-10-20) already vendors this package's
+coincidence-attention surface as `NeuroPulse.Attention` (copied from TemporalFocus
+`eb38c70`; see [ADR 0002](https://github.com/rmems/TemporalFocus.jl/blob/main/docs/adr/0002-merge-temporalfocus-into-neuropulse.md))
+and re-exports the same public names. The implementations match aside from
+formatting. This repository does **not** depend on NeuroPulse.
+
+**Same public names in both trees**
+
+- `SpikeEvent`, `SpikeTrain`, `TemporalBuffer`
+- `prune!`
+- `temporal_weight`
+- `spike_attention_discrete`, `spike_attention_temporal`, `spike_attention_continuous`
+- `normalize_l1!`, `normalize_max!`
+
+**NeuroPulse-only (not duplicated here)**
+
+- `ActivityRegion`, `RegionRouter`, `RoutingConfig`
+- `update_routing!` / `update_relevance!`
+- `routing_diagnostics` / `nero_diagnostics`
+- `adapt_leak!`, `save_state`, `load_state!`
+
+Those routing helpers use a floored softmax-like pass. They are not this
+package's spike-coincidence kernel, which stays implemented in TemporalFocus.
+
+**Why there is no NeuroPulse dependency**
+
+NeuroPulse is installable from git (`Pkg.add(url=...)`) and declares
+`name = "NeuroPulse"` with `julia = "1.9"`, but it is not in the General
+registry and has no tags. There is therefore no versioned `[compat]` entry
+that works for this package's 1.9+ / future-registration story. A git pin
+would also pull `LinearAlgebra`, `Printf`, and the routing kernel, and it
+would invert [ADR 0002](https://github.com/rmems/TemporalFocus.jl/blob/main/docs/adr/0002-merge-temporalfocus-into-neuropulse.md)
+(TemporalFocus consolidates *into* NeuroPulse; this repo must not import it).
+
+**Plan**
+
+1. Keep the coincidence kernels (`spike_attention_*`, `temporal_weight`) here.
+2. Refresh NeuroPulse's `src/attention/` from this tree when those files drift.
+3. Finish ADR 0002 in NeuroPulse, then turn this README into a successor pointer.
+4. Do not add `using NeuroPulse` to TemporalFocus.
+
 ## Installation
 
 ```julia
