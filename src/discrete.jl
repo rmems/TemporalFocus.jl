@@ -1,8 +1,34 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 
+@inline function _require_finite(x::Real, label::AbstractString)
+    isfinite(x) || throw(ArgumentError("$label must be finite, got $x"))
+    return x
+end
+
+@inline function _require_finite_event(event::SpikeEvent)
+    _require_finite(event.t, "spike time")
+    _require_finite(event.value, "spike value")
+    return event
+end
+
+function _require_finite_events(events)
+    for event in events
+        _require_finite_event(event)
+    end
+    return events
+end
+
+function _require_finite_readout(readout::AbstractMatrix)
+    for val in readout
+        _require_finite(val, "readout value")
+    end
+    return readout
+end
+
 @inline function _check_positive_rows(v::AbstractMatrix)
     nrows = size(v, 1)
     nrows > 0 || throw(ArgumentError("value matrix must have at least one row"))
+    _require_finite_readout(v)
     return nrows
 end
 
@@ -37,8 +63,9 @@ only neuron identity and spike values matter.
   `Vector{Float32}` of length `size(readout, 1)`
 
 # Throws
-- `ArgumentError` if the readout has no rows or a source `neuron_id` is outside
-  `1:size(readout, 1)`
+- `ArgumentError` if the readout has no rows, a source `neuron_id` is outside
+  `1:size(readout, 1)`, or any spike time, spike value, or readout entry is
+  `NaN` or `Inf`
 """
 function spike_attention_discrete(
     source_spikes::SpikeTrain,
@@ -46,6 +73,8 @@ function spike_attention_discrete(
     readout::AbstractMatrix,
 )
     n = _check_positive_rows(readout)
+    _require_finite_events(source_spikes.events)
+    _require_finite_events(context_spikes.events)
     attention = zeros(Float32, n)
 
     @inbounds for source_event in source_spikes.events

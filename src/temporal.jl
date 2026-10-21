@@ -17,12 +17,14 @@ Computes `exp(-abs(dt) / τ)`. Closer-in-time spikes receive higher weight.
 - `Float32` weight in `(0, 1]`
 
 # Throws
-- `ArgumentError` if `τ` is not positive
+- `ArgumentError` if `τ` is not positive, or if `dt` is `NaN` or `Inf`
 """
 @inline function temporal_weight(dt::Real, τ::Real)
     τ_f32 = Float32(τ)
     τ_f32 > 0f0 || throw(ArgumentError("τ must be positive"))
-    return _temporal_weight_unchecked(Float32(dt), τ_f32)
+    dt_f32 = Float32(dt)
+    isfinite(dt_f32) || throw(ArgumentError("dt must be finite, got $dt_f32"))
+    return _temporal_weight_unchecked(dt_f32, τ_f32)
 end
 
 """
@@ -45,8 +47,9 @@ difference, then applies the readout matrix.
   `Vector{Float32}` of length `size(readout, 1)`
 
 # Throws
-- `ArgumentError` if `τ ≤ 0`, the readout has no rows, or a source `neuron_id`
-  is outside `1:size(readout, 1)`
+- `ArgumentError` if `τ ≤ 0`, the readout has no rows, a source `neuron_id`
+  is outside `1:size(readout, 1)`, or any spike time, spike value, or readout
+  entry is `NaN` or `Inf`
 """
 function spike_attention_temporal(
     source_spikes::SpikeTrain,
@@ -57,6 +60,8 @@ function spike_attention_temporal(
     τ_f32 = Float32(τ)
     τ_f32 > 0f0 || throw(ArgumentError("τ must be positive"))
     n = _check_positive_rows(readout)
+    _require_finite_events(source_spikes.events)
+    _require_finite_events(context_spikes.events)
     attention = zeros(Float32, n)
 
     @inbounds for source_event in source_spikes.events

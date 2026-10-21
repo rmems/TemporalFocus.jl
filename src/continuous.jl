@@ -21,8 +21,10 @@ contribute. Matching neuron IDs are required; contributions are scaled by
   `Vector{Float32}` of length `size(readout, 1)`
 
 # Throws
-- `ArgumentError` if `τ ≤ 0`, the readout has no rows, or a source `neuron_id`
-  is outside `1:size(readout, 1)`
+- `ArgumentError` if `τ ≤ 0`, the readout has no rows, a source `neuron_id`
+  is outside `1:size(readout, 1)`, either buffer window is `NaN`, or any
+  spike time, spike value, or readout entry is `NaN` or `Inf`. A `+Inf`
+  window is allowed and admits every finite pair (`abs(dt) <= Inf`).
 """
 function spike_attention_continuous(
     source_buffer::TemporalBuffer,
@@ -33,6 +35,10 @@ function spike_attention_continuous(
     τ_f32 = Float32(τ)
     τ_f32 > 0f0 || throw(ArgumentError("τ must be positive"))
     n = _check_positive_rows(readout)
+    isnan(source_buffer.window) && throw(ArgumentError("source window must not be NaN"))
+    isnan(context_buffer.window) && throw(ArgumentError("context window must not be NaN"))
+    _require_finite_events(source_buffer.events)
+    _require_finite_events(context_buffer.events)
     attention = zeros(Float32, n)
     window = min(source_buffer.window, context_buffer.window)
 

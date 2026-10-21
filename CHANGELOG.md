@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `prune!` documents and handles empty, all-zero, and threshold-equal buffers;
+  `NaN` windows, non-finite event times, and non-finite / Float32-overflowing
+  `current_time` raise `ArgumentError`. A `+Inf` window stays unbounded.
+- `normalize_l1!` / `normalize_max!` leave empty or non-positive totals
+  unchanged (no `NaN` / divide-by-zero) and reject `NaN`/`Inf` weights.
+- Attention kernels reject `NaN`/`Inf` spike times, values, and readout
+  entries with `ArgumentError`.
+
 ### Added
 
 - `docs/adr/0002-merge-temporalfocus-into-neuropulse.md`: superseding ADR.
