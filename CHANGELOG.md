@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Attention kernels and `temporal_weight` reject `NaN`/`Inf` spike times,
   values, readout entries, and `dt`, a `τ` that is non-positive or overflows
   `Float32` to `Inf32`, and a spike-time difference that overflows `Float32`,
-  with `ArgumentError`.
+  with `ArgumentError`. Finite complex readout entries stay valid; only
+  non-finite entries are rejected.
 
 ### Added
 

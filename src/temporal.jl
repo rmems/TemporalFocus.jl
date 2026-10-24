@@ -63,7 +63,8 @@ difference, then applies the readout matrix.
 - `ArgumentError` if `τ` is not finite and positive (including values that
   overflow `Float32` to `Inf32`), the readout has no rows, a source `neuron_id`
   is outside `1:size(readout, 1)`, or any spike time, spike value, or readout
-  entry is `NaN` or `Inf`. A spike-time difference that overflows `Float32`
+  entry is non-finite (finite complex readout entries are accepted). A spike-time
+  difference that overflows `Float32`
   also raises `ArgumentError`
 """
 function spike_attention_temporal(

@@ -24,7 +24,8 @@ contribute. Matching neuron IDs are required; contributions are scaled by
 - `ArgumentError` if `τ` is not finite and positive (including values that
   overflow `Float32` to `Inf32`), the readout has no rows, a source `neuron_id`
   is outside `1:size(readout, 1)`, either buffer window is `NaN` or `-Inf`, or
-  any spike time, spike value, or readout entry is `NaN` or `Inf`. A spike-time
+  any spike time, spike value, or readout entry is non-finite (finite complex
+  readout entries are accepted). A spike-time
   difference that overflows `Float32` also raises `ArgumentError`. A `+Inf`
   window is allowed and admits every finite pair (`abs(dt) <= Inf`).
 """

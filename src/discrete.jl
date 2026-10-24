@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 
-@inline function _require_finite(x::Real, label::AbstractString)
+@inline function _require_finite(x::Number, label::AbstractString)
     isfinite(x) || throw(ArgumentError("$label must be finite, got $x"))
     return x
 end
@@ -65,7 +65,8 @@ only neuron identity and spike values matter.
 # Throws
 - `ArgumentError` if the readout has no rows, a source `neuron_id` is outside
   `1:size(readout, 1)`, or any spike time, spike value, or readout entry is
-  `NaN` or `Inf`
+  non-finite. Finite complex readout entries are accepted; `isfinite` applies
+  to both parts
 """
 function spike_attention_discrete(
     source_spikes::SpikeTrain,

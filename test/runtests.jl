@@ -273,6 +273,17 @@ using .ExperimentUtils
                 finite_k,
                 Float32[1 NaN32; 0 1],
             )
+            complex_v = reshape(ComplexF32[1 + 2im], 1, 1)
+            @test spike_attention_discrete(
+                SpikeTrain([SpikeEvent(1, 0.1f0, 1.0f0)]),
+                SpikeTrain([SpikeEvent(1, 0.1f0, 1.0f0)]),
+                complex_v,
+            ) == ComplexF32[1 + 2im]
+            @test_throws ArgumentError spike_attention_discrete(
+                finite_q,
+                finite_k,
+                reshape(ComplexF32[Inf32], 1, 1),
+            )
         end
 
         @testset "No coincidences" begin
