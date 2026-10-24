@@ -83,6 +83,12 @@ TemporalBuffer(window::Real, events::AbstractVector{<:SpikeEvent} = SpikeEvent[]
 Base.isempty(train::SpikeTrain) = isempty(train.events)
 Base.isempty(buffer::TemporalBuffer) = isempty(buffer.events)
 
+@inline function _require_retention_window(window::Float32, label::AbstractString)
+    (isfinite(window) || window == Inf32) ||
+        throw(ArgumentError("$label must be finite or +Inf, got $window"))
+    return window
+end
+
 """
     prune!(buffer::TemporalBuffer, current_time) -> TemporalBuffer
 
@@ -94,7 +100,9 @@ exactly is retained. An empty `events` vector is a no-op. When every event
 time and `current_time` are zero, ages are zero, so all events are kept
 whenever `buffer.window >= 0`. A zero window keeps only events whose age
 is exactly zero. A `+Inf` window is an unbounded buffer and keeps every
-event with a finite time.
+event with a finite time. A `-Inf` window is rejected: every finite age
+fails `age <= -Inf`, which would otherwise drop the buffer without an error.
+Finite negative windows still use the same inclusive comparison.
 
 Mutates `buffer.events` in place and returns `buffer`.
 
@@ -107,8 +115,8 @@ Mutates `buffer.events` in place and returns `buffer`.
 
 # Throws
 - `ArgumentError` if `current_time` is not finite (including values that
-  overflow `Float32` to `Inf`), if `buffer.window` is `NaN`, or if any
-  `event.t` is `NaN` or `Inf`
+  overflow `Float32` to `Inf`), if `buffer.window` is `NaN` or `-Inf`, or if
+  any `event.t` is `NaN` or `Inf`
 """
 function prune!(buffer::TemporalBuffer, current_time::Real)
     isfinite(current_time) ||
@@ -116,8 +124,7 @@ function prune!(buffer::TemporalBuffer, current_time::Real)
     current_time_f32 = Float32(current_time)
     isfinite(current_time_f32) ||
         throw(ArgumentError("current_time overflows Float32, got $current_time"))
-    isnan(buffer.window) &&
-        throw(ArgumentError("buffer.window must not be NaN, got $(buffer.window)"))
+    _require_retention_window(buffer.window, "buffer.window")
     for event in buffer.events
         isfinite(event.t) || throw(ArgumentError("event.t must be finite, got $(event.t)"))
     end

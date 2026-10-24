@@ -2,6 +2,13 @@
 
 @inline _temporal_weight_unchecked(dt::Float32, τ::Float32) = exp(-abs(dt) / τ)
 
+@inline function _require_positive_tau(τ::Real)
+    τ_f32 = Float32(τ)
+    isfinite(τ_f32) && τ_f32 > 0f0 ||
+        throw(ArgumentError("τ must be finite and positive, got $τ"))
+    return τ_f32
+end
+
 """
     temporal_weight(dt, τ) -> Float32
 
@@ -17,11 +24,12 @@ Computes `exp(-abs(dt) / τ)`. Closer-in-time spikes receive higher weight.
 - `Float32` weight in `(0, 1]`
 
 # Throws
-- `ArgumentError` if `τ` is not positive, or if `dt` is `NaN` or `Inf`
+- `ArgumentError` if `τ` is not finite and positive after conversion to
+  `Float32` (values that overflow to `Inf32`, such as `1e39`, are rejected),
+  or if `dt` is not finite
 """
 @inline function temporal_weight(dt::Real, τ::Real)
-    τ_f32 = Float32(τ)
-    τ_f32 > 0f0 || throw(ArgumentError("τ must be positive"))
+    τ_f32 = _require_positive_tau(τ)
     dt_f32 = Float32(dt)
     isfinite(dt_f32) || throw(ArgumentError("dt must be finite, got $dt_f32"))
     return _temporal_weight_unchecked(dt_f32, τ_f32)
@@ -47,7 +55,8 @@ difference, then applies the readout matrix.
   `Vector{Float32}` of length `size(readout, 1)`
 
 # Throws
-- `ArgumentError` if `τ ≤ 0`, the readout has no rows, a source `neuron_id`
+- `ArgumentError` if `τ` is not finite and positive (including values that
+  overflow `Float32` to `Inf32`), the readout has no rows, a source `neuron_id`
   is outside `1:size(readout, 1)`, or any spike time, spike value, or readout
   entry is `NaN` or `Inf`
 """
@@ -57,8 +66,7 @@ function spike_attention_temporal(
     readout::AbstractMatrix;
     τ::Real = 1.0f0,
 )
-    τ_f32 = Float32(τ)
-    τ_f32 > 0f0 || throw(ArgumentError("τ must be positive"))
+    τ_f32 = _require_positive_tau(τ)
     n = _check_positive_rows(readout)
     _require_finite_events(source_spikes.events)
     _require_finite_events(context_spikes.events)

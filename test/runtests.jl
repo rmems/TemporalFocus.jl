@@ -166,6 +166,20 @@ using .ExperimentUtils
                 TemporalBuffer(0.25f0, [SpikeEvent(1, Inf32, 1.0f0)]),
                 1.0f0,
             )
+            @test_throws ArgumentError prune!(
+                TemporalBuffer(-Inf32, [SpikeEvent(1, 0.10f0, 1.0f0)]),
+                1.0f0,
+            )
+        end
+
+        @testset "Prune finite negative window uses the inclusive age test" begin
+            # age 0 is not <= -0.25; age -0.5 is. -Inf is rejected above.
+            buffer = TemporalBuffer(
+                -0.25f0,
+                [SpikeEvent(1, 1.0f0, 1.0f0), SpikeEvent(2, 1.5f0, 1.0f0)],
+            )
+            prune!(buffer, 1.0f0)
+            @test [event.neuron_id for event in buffer.events] == [2]
         end
 
         @testset "Prune +Inf window keeps all finite events" begin
@@ -293,6 +307,14 @@ using .ExperimentUtils
             @test_throws ArgumentError spike_attention_temporal(q, k, v; τ = -1.0f0)
         end
 
+        @testset "tau that overflows Float32 throws" begin
+            q = SpikeTrain([SpikeEvent(1, 0.1f0, 1.0f0)])
+            k = SpikeTrain([SpikeEvent(1, 0.2f0, 1.0f0)])
+            v = Float32[1; 2;;]
+            @test_throws ArgumentError spike_attention_temporal(q, k, v; τ = 1e39)
+            @test_throws ArgumentError spike_attention_temporal(q, k, v; τ = Inf)
+        end
+
         @testset "Small tau decays faster" begin
             q = SpikeTrain([SpikeEvent(1, 0.10f0, 1.0f0)])
             k = SpikeTrain([SpikeEvent(1, 0.30f0, 1.0f0)])
@@ -395,6 +417,21 @@ using .ExperimentUtils
             bk = TemporalBuffer(0.3f0, [SpikeEvent(1, 0.5f0, 1.0f0)])
             v = Float32[1; 2;;]
             @test_throws ArgumentError spike_attention_continuous(bq, bk, v; τ = 0.15f0)
+        end
+
+        @testset "-Inf window throws" begin
+            bq = TemporalBuffer(-Inf32, [SpikeEvent(1, 0.5f0, 1.0f0)])
+            bk = TemporalBuffer(0.3f0, [SpikeEvent(1, 0.5f0, 1.0f0)])
+            v = Float32[1; 2;;]
+            @test_throws ArgumentError spike_attention_continuous(bq, bk, v; τ = 0.15f0)
+            @test_throws ArgumentError spike_attention_continuous(bk, bq, v; τ = 0.15f0)
+        end
+
+        @testset "tau that overflows Float32 throws" begin
+            bq = TemporalBuffer(0.3f0, [SpikeEvent(1, 0.5f0, 1.0f0)])
+            bk = TemporalBuffer(0.3f0, [SpikeEvent(1, 0.5f0, 1.0f0)])
+            v = Float32[1; 2;;]
+            @test_throws ArgumentError spike_attention_continuous(bq, bk, v; τ = 1e39)
         end
     end
 
@@ -509,6 +546,13 @@ using .ExperimentUtils
             @test_throws ArgumentError temporal_weight(NaN32, 1.0f0)
             @test_throws ArgumentError temporal_weight(Inf32, 1.0f0)
             @test_throws ArgumentError temporal_weight(-Inf32, 1.0f0)
+        end
+
+        @testset "tau that overflows Float32 throws" begin
+            @test_throws ArgumentError temporal_weight(0.1f0, 1e39)
+            @test_throws ArgumentError temporal_weight(0.1f0, Inf)
+            # Largest finite Float32 τ is accepted; only the Inf32 overflow is an error.
+            @test temporal_weight(0.0f0, floatmax(Float32)) == 1.0f0
         end
     end
 
