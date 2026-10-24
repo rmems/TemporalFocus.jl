@@ -24,7 +24,8 @@ contribute. Matching neuron IDs are required; contributions are scaled by
 - `ArgumentError` if `τ` is not finite and positive (including values that
   overflow `Float32` to `Inf32`), the readout has no rows, a source `neuron_id`
   is outside `1:size(readout, 1)`, either buffer window is `NaN` or `-Inf`, or
-  any spike time, spike value, or readout entry is `NaN` or `Inf`. A `+Inf`
+  any spike time, spike value, or readout entry is `NaN` or `Inf`. A spike-time
+  difference that overflows `Float32` also raises `ArgumentError`. A `+Inf`
   window is allowed and admits every finite pair (`abs(dt) <= Inf`).
 """
 function spike_attention_continuous(
@@ -46,7 +47,7 @@ function spike_attention_continuous(
         source_id = _check_neuron_id(source_event.neuron_id, n, "source")
         for context_event in context_buffer.events
             if source_id == context_event.neuron_id
-                dt = source_event.t - context_event.t
+                dt = _require_finite_dt(source_event.t - context_event.t)
                 if abs(dt) <= window
                     attention[source_id] += source_event.value * context_event.value *
                                             _temporal_weight_unchecked(dt, τ_f32)

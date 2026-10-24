@@ -2,6 +2,11 @@
 
 @inline _temporal_weight_unchecked(dt::Float32, τ::Float32) = exp(-abs(dt) / τ)
 
+@inline function _require_finite_dt(dt::Float32)
+    isfinite(dt) || throw(ArgumentError("spike time difference must be finite, got $dt"))
+    return dt
+end
+
 @inline function _require_positive_tau(τ::Real)
     τ_f32 = Float32(τ)
     isfinite(τ_f32) && τ_f32 > 0f0 ||
@@ -58,7 +63,8 @@ difference, then applies the readout matrix.
 - `ArgumentError` if `τ` is not finite and positive (including values that
   overflow `Float32` to `Inf32`), the readout has no rows, a source `neuron_id`
   is outside `1:size(readout, 1)`, or any spike time, spike value, or readout
-  entry is `NaN` or `Inf`
+  entry is `NaN` or `Inf`. A spike-time difference that overflows `Float32`
+  also raises `ArgumentError`
 """
 function spike_attention_temporal(
     source_spikes::SpikeTrain,
@@ -76,8 +82,9 @@ function spike_attention_temporal(
         source_id = _check_neuron_id(source_event.neuron_id, n, "source")
         for context_event in context_spikes.events
             if source_id == context_event.neuron_id
+                dt = _require_finite_dt(source_event.t - context_event.t)
                 attention[source_id] += source_event.value * context_event.value *
-                                        _temporal_weight_unchecked(source_event.t - context_event.t, τ_f32)
+                                        _temporal_weight_unchecked(dt, τ_f32)
             end
         end
     end

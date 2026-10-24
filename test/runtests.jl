@@ -315,6 +315,17 @@ using .ExperimentUtils
             @test_throws ArgumentError spike_attention_temporal(q, k, v; τ = Inf)
         end
 
+        @testset "spike time difference that overflows Float32 throws" begin
+            hi = floatmax(Float32)
+            v = Float32[1;;]
+            @test_throws ArgumentError spike_attention_temporal(
+                SpikeTrain([SpikeEvent(1, hi, 1.0f0)]),
+                SpikeTrain([SpikeEvent(1, -hi, 1.0f0)]),
+                v;
+                τ = 1.0f0,
+            )
+        end
+
         @testset "Small tau decays faster" begin
             q = SpikeTrain([SpikeEvent(1, 0.10f0, 1.0f0)])
             k = SpikeTrain([SpikeEvent(1, 0.30f0, 1.0f0)])
@@ -432,6 +443,14 @@ using .ExperimentUtils
             bk = TemporalBuffer(0.3f0, [SpikeEvent(1, 0.5f0, 1.0f0)])
             v = Float32[1; 2;;]
             @test_throws ArgumentError spike_attention_continuous(bq, bk, v; τ = 1e39)
+        end
+
+        @testset "spike time difference that overflows Float32 throws" begin
+            hi = floatmax(Float32)
+            bq = TemporalBuffer(Inf32, [SpikeEvent(1, hi, 1.0f0)])
+            bk = TemporalBuffer(Inf32, [SpikeEvent(1, -hi, 1.0f0)])
+            v = Float32[1;;]
+            @test_throws ArgumentError spike_attention_continuous(bq, bk, v; τ = 1.0f0)
         end
     end
 
