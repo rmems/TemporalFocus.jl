@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Docs note listing TemporalFocus names also vendored in `rmems/NeuroPulse.jl`
+  (`NeuroPulse.Attention`) and why this package does not depend on NeuroPulse.
 - `docs/adr/0002-merge-temporalfocus-into-neuropulse.md`: superseding ADR.
   Surviving package is `rmems/NeuroPulse.jl` (UUID `b7e4c3f2-…`). TemporalFocus
   consolidates into NeuroPulse. Do not implement ADR 0001 / PR #54's
