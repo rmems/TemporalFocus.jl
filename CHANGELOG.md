@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `prune!` documents and handles empty, all-zero, and threshold-equal buffers;
   `NaN` and `-Inf` windows, non-finite event times, and non-finite /
   Float32-overflowing `current_time` raise `ArgumentError`. A `+Inf` window
-  stays unbounded. Finite negative windows keep the inclusive age comparison.
+  stays unbounded. A zero window keeps ages at most zero, including future
+  events. Finite negative windows keep the inclusive age comparison.
 - `normalize_l1!` / `normalize_max!` leave empty or non-positive totals
   unchanged (no `NaN` / divide-by-zero) and reject `NaN`/`Inf` weights.
 - Attention kernels and `temporal_weight` reject `NaN`/`Inf` spike times,

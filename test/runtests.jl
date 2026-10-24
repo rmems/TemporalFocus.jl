@@ -116,17 +116,18 @@ using .ExperimentUtils
             prune!(buffer, 0.0f0)
             @test length(buffer.events) == 2
 
-            # window == 0 keeps only events whose age is exactly 0 (inclusive).
+            # window == 0 keeps age <= 0: the reference time and future events.
             zero_window = TemporalBuffer(
                 0.0f0,
                 [
                     SpikeEvent(1, 1.0f0, 1.0f0),
                     SpikeEvent(2, 0.5f0, 1.0f0),
                     SpikeEvent(3, 1.0f0, 1.0f0),
+                    SpikeEvent(4, 1.5f0, 1.0f0),
                 ],
             )
             prune!(zero_window, 1.0f0)
-            @test [event.neuron_id for event in zero_window.events] == [1, 3]
+            @test [event.neuron_id for event in zero_window.events] == [1, 3, 4]
         end
 
         @testset "Prune keeps events exactly at the window threshold" begin
