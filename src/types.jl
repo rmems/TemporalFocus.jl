@@ -83,12 +83,28 @@ TemporalBuffer(window::Real, events::AbstractVector{<:SpikeEvent} = SpikeEvent[]
 Base.isempty(train::SpikeTrain) = isempty(train.events)
 Base.isempty(buffer::TemporalBuffer) = isempty(buffer.events)
 
+@inline function _require_retention_window(window::Float32, label::AbstractString)
+    (isfinite(window) || window == Inf32) ||
+        throw(ArgumentError("$label must be finite or +Inf, got $window"))
+    return window
+end
+
 """
     prune!(buffer::TemporalBuffer, current_time) -> TemporalBuffer
 
 Remove events from `buffer` that fall outside the retention window.
 
 Keeps only events satisfying `(current_time - event.t) <= buffer.window`.
+The comparison is inclusive: an event whose age equals `buffer.window`
+exactly is retained. An empty `events` vector is a no-op. When every event
+time and `current_time` are zero, ages are zero, so all events are kept
+whenever `buffer.window >= 0`. A zero window keeps events whose age is
+at most zero, including events at the reference time and future events.
+A `+Inf` window is an unbounded buffer and keeps every
+event with a finite time. A `-Inf` window is rejected: every finite age
+fails `age <= -Inf`, which would otherwise drop the buffer without an error.
+Finite negative windows still use the same inclusive comparison.
+
 Mutates `buffer.events` in place and returns `buffer`.
 
 # Arguments
@@ -97,9 +113,22 @@ Mutates `buffer.events` in place and returns `buffer`.
 
 # Returns
 - the same `buffer` after pruning
+
+# Throws
+- `ArgumentError` if `current_time` is not finite (including values that
+  overflow `Float32` to `Inf`), if `buffer.window` is `NaN` or `-Inf`, or if
+  any `event.t` is `NaN` or `Inf`
 """
 function prune!(buffer::TemporalBuffer, current_time::Real)
+    isfinite(current_time) ||
+        throw(ArgumentError("current_time must be finite, got $current_time"))
     current_time_f32 = Float32(current_time)
+    isfinite(current_time_f32) ||
+        throw(ArgumentError("current_time overflows Float32, got $current_time"))
+    _require_retention_window(buffer.window, "buffer.window")
+    for event in buffer.events
+        isfinite(event.t) || throw(ArgumentError("event.t must be finite, got $(event.t)"))
+    end
     filter!(event -> (current_time_f32 - event.t) <= buffer.window, buffer.events)
     return buffer
 end

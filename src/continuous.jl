@@ -21,8 +21,13 @@ contribute. Matching neuron IDs are required; contributions are scaled by
   `Vector{Float32}` of length `size(readout, 1)`
 
 # Throws
-- `ArgumentError` if `τ ≤ 0`, the readout has no rows, or a source `neuron_id`
-  is outside `1:size(readout, 1)`
+- `ArgumentError` if `τ` is not finite and positive (including values that
+  overflow `Float32` to `Inf32`), the readout has no rows, a source `neuron_id`
+  is outside `1:size(readout, 1)`, either buffer window is `NaN` or `-Inf`, or
+  any spike time, spike value, or readout entry is non-finite (finite complex
+  readout entries are accepted). A spike-time
+  difference that overflows `Float32` also raises `ArgumentError`. A `+Inf`
+  window is allowed and admits every finite pair (`abs(dt) <= Inf`).
 """
 function spike_attention_continuous(
     source_buffer::TemporalBuffer,
@@ -30,9 +35,12 @@ function spike_attention_continuous(
     readout::AbstractMatrix;
     τ::Real = 1.0f0,
 )
-    τ_f32 = Float32(τ)
-    τ_f32 > 0f0 || throw(ArgumentError("τ must be positive"))
+    τ_f32 = _require_positive_tau(τ)
     n = _check_positive_rows(readout)
+    _require_retention_window(source_buffer.window, "source window")
+    _require_retention_window(context_buffer.window, "context window")
+    _require_finite_events(source_buffer.events)
+    _require_finite_events(context_buffer.events)
     attention = zeros(Float32, n)
     window = min(source_buffer.window, context_buffer.window)
 
@@ -40,7 +48,7 @@ function spike_attention_continuous(
         source_id = _check_neuron_id(source_event.neuron_id, n, "source")
         for context_event in context_buffer.events
             if source_id == context_event.neuron_id
-                dt = source_event.t - context_event.t
+                dt = _require_finite_dt(source_event.t - context_event.t)
                 if abs(dt) <= window
                     attention[source_id] += source_event.value * context_event.value *
                                             _temporal_weight_unchecked(dt, τ_f32)
