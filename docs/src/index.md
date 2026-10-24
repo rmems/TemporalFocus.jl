@@ -39,7 +39,7 @@ formatting. This repository does **not** depend on NeuroPulse.
 
 - `ActivityRegion`, `RegionRouter`, `RoutingConfig`
 - `update_routing!` / `update_relevance!`
-- `routing_diagnostics` / `nero_diagnostics`
+- `routing_diagnostics` / `nero_diagnostics` (legacy NERO alias; there is no `neuro_diagnostics`)
 - `adapt_leak!`, `save_state`, `load_state!`
 
 Those routing helpers use a floored softmax-like pass. They are not this
